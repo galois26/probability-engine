@@ -7,8 +7,9 @@ positiveFeatures:
   - minerals
   - supply chain
   - disruption
-  - export restrictions
   - shortages
+  - bottleneck
+  - industrial metals
 negativeFeatures:
   - supply restored
   - bottleneck eased

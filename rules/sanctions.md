@@ -4,10 +4,13 @@ marketScope: [fx, commodities, equities]
 directionDefault: negative
 threshold: 0.65
 positiveFeatures:
-  - sanctions
+  - sanctions 
+  - sanctions package
+  - financial sanctions
+  - secondary sanctions
   - export ban
   - embargo
-  - restrictions
+  - sanctioned
 negativeFeatures:
   - sanctions lifted
   - exemptions granted
