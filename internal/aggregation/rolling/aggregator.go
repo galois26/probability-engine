@@ -13,9 +13,15 @@ import (
 )
 
 type Aggregator struct {
-	minSignals int
-	threshold  float64
-	window     time.Duration
+	minSignals           int
+	threshold            float64
+	window               time.Duration
+	singletonProbability float64
+}
+
+type bucket struct {
+	signals []domain.Signal
+	score   float64
 }
 
 func NewAggregator(minSignals int, threshold float64, window time.Duration) *Aggregator {
@@ -29,9 +35,10 @@ func NewAggregator(minSignals int, threshold float64, window time.Duration) *Agg
 		window = 24 * time.Hour
 	}
 	return &Aggregator{
-		minSignals: minSignals,
-		threshold:  threshold,
-		window:     window,
+		minSignals:           minSignals,
+		threshold:            threshold,
+		window:               window,
+		singletonProbability: 0.90,
 	}
 }
 
@@ -39,12 +46,6 @@ func (a *Aggregator) Aggregate(ctx context.Context, signals []domain.Signal, eve
 	_ = ctx
 
 	cutoff := time.Now().UTC().Add(-a.window)
-
-	type bucket struct {
-		signals []domain.Signal
-		score   float64
-	}
-
 	grouped := map[string]*bucket{}
 
 	for _, sig := range signals {
@@ -69,10 +70,7 @@ func (a *Aggregator) Aggregate(ctx context.Context, signals []domain.Signal, eve
 	out := make([]domain.Insight, 0, len(grouped))
 
 	for key, b := range grouped {
-		if len(b.signals) < a.minSignals {
-			continue
-		}
-		if b.score < a.threshold {
+		if !a.qualifies(b) {
 			continue
 		}
 
@@ -81,21 +79,24 @@ func (a *Aggregator) Aggregate(ctx context.Context, signals []domain.Signal, eve
 		})
 
 		first := b.signals[0]
+		scope := mergedScope(b.signals)
+		now := time.Now().UTC()
 
 		insight := domain.Insight{
 			ID:          buildInsightID(key, b.signals),
-			Title:       buildTitle(first, len(b.signals)),
-			MarketScope: append([]string(nil), first.MarketScope...),
+			Title:       buildTitle(first.Kind, scope, len(b.signals)),
+			MarketScope: scope,
 			Probability: clampProbability(b.score / float64(len(b.signals))),
 			Direction:   first.Direction,
-			Severity:    severityFromScore(b.score),
-			Status:      domain.InsightStatusOpen,
-			Summary:     buildSummary(first, len(b.signals)),
-			Signals:     collectSignalIDs(b.signals),
-			Evidence:    buildEvidence(b.signals, eventsByID),
-			Flags:       domain.InsightFlags{},
-			CreatedAt:   time.Now().UTC(),
-			UpdatedAt:   time.Now().UTC(),
+			//		Severity:    severityFromScore(b.score),
+			Severity:  severityForBucket(b.signals, b.score),
+			Status:    domain.InsightStatusOpen,
+			Summary:   buildSummary(first, len(b.signals)),
+			Signals:   collectSignalIDs(b.signals),
+			Evidence:  buildEvidence(b.signals, eventsByID),
+			Flags:     domain.InsightFlags{},
+			CreatedAt: now,
+			UpdatedAt: now,
 		}
 
 		out = append(out, insight)
@@ -104,10 +105,33 @@ func (a *Aggregator) Aggregate(ctx context.Context, signals []domain.Signal, eve
 	return out, nil
 }
 
+func severityForBucket(signals []domain.Signal, score float64) domain.Severity {
+	if len(signals) == 1 {
+		p := signals[0].Probability
+		switch {
+		case p >= 0.95:
+			return domain.SeverityHigh
+		case p >= 0.85:
+			return domain.SeverityMedium
+		default:
+			return domain.SeverityLow
+		}
+	}
+	return severityFromScore(score)
+}
+
+func (a *Aggregator) qualifies(b *bucket) bool {
+	if len(b.signals) >= a.minSignals && b.score >= a.threshold {
+		return true
+	}
+	if len(b.signals) == 1 && b.signals[0].Probability >= a.singletonProbability {
+		return true
+	}
+	return false
+}
+
 func buildGroupKey(sig domain.Signal) string {
-	scope := append([]string(nil), sig.MarketScope...)
-	sort.Strings(scope)
-	return strings.Join(scope, ",") + "|" + string(sig.Direction) + "|" + sig.Kind
+	return string(sig.Direction) + "|" + sig.Kind
 }
 
 func buildInsightID(groupKey string, signals []domain.Signal) string {
@@ -120,17 +144,41 @@ func buildInsightID(groupKey string, signals []domain.Signal) string {
 	return hex.EncodeToString(h.Sum(nil))[:16]
 }
 
-func buildTitle(sig domain.Signal, n int) string {
-	scope := "market"
-	if len(sig.MarketScope) > 0 {
-		scope = strings.Join(sig.MarketScope, ", ")
+func buildTitle(kind string, scope []string, n int) string {
+	scopeText := "market"
+	if len(scope) > 0 {
+		scopeText = strings.Join(scope, ", ")
 	}
-	return sig.Kind + " signal cluster affecting " + scope + " (" + strconv.Itoa(n) + " signals)"
+	if n == 1 {
+		return kind + " signal affecting " + scopeText + " (1 signal)"
+	}
+	return kind + " signal cluster affecting " + scopeText + " (" + strconv.Itoa(n) + " signals)"
+}
+func buildSummary(sig domain.Signal, n int) string {
+	if n == 1 {
+		return "A high-confidence signal indicates a potential market-moving development."
+	}
+	return "Multiple related signals indicate a potential market-moving development."
 }
 
-func buildSummary(sig domain.Signal, n int) string {
-	_ = n
-	return "Multiple related signals indicate a potential market-moving development."
+func mergedScope(signals []domain.Signal) []string {
+	set := make(map[string]struct{})
+	for _, s := range signals {
+		for _, sc := range s.MarketScope {
+			sc = strings.TrimSpace(sc)
+			if sc == "" {
+				continue
+			}
+			set[sc] = struct{}{}
+		}
+	}
+
+	out := make([]string, 0, len(set))
+	for sc := range set {
+		out = append(out, sc)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func collectSignalIDs(signals []domain.Signal) []string {
