@@ -99,8 +99,8 @@ func scoreRuleMatch(text string, rule domain.SignalRule) float64 {
 	if score < 0 {
 		score = 0
 	}
-	if score > 1 {
-		score = 1
+	if score > 0.92 {
+		score = 0.92
 	}
 	return score
 }
