@@ -39,7 +39,8 @@ func (c *Classifier) Classify(ctx context.Context, ev domain.Event, rules []doma
 		return nil, nil
 	}
 
-	tokens := c.extractor.Extract(ev)
+	//tokens := c.extractor.Extract(ev)
+	tokens := uniqueStrings(c.extractor.Extract(ev))
 	if len(tokens) == 0 {
 		return nil, nil
 	}
@@ -90,6 +91,19 @@ func (c *Classifier) Classify(ctx context.Context, ev domain.Event, rules []doma
 	}
 
 	return []domain.Signal{sig}, nil
+}
+
+func uniqueStrings(in []string) []string {
+	seen := make(map[string]struct{}, len(in))
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		if _, ok := seen[s]; ok {
+			continue
+		}
+		seen[s] = struct{}{}
+		out = append(out, s)
+	}
+	return out
 }
 
 func calibratedProbability(scores []scored, winner string) float64 {
