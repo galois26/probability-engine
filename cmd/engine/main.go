@@ -3,72 +3,122 @@ package main
 import (
 	"context"
 	"log"
+	"net/http"
+	"os"
+	"strconv"
+	"strings"
 	"time"
+
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
 
 	agg "probability-engine/internal/aggregation/rolling"
 	bayes "probability-engine/internal/classification/bayes"
 	feat "probability-engine/internal/classification/features"
 	rulecls "probability-engine/internal/classification/rules"
-	"probability-engine/internal/domain"
 	"probability-engine/internal/engine"
 	noop "probability-engine/internal/enrichment/noop"
 	memstore "probability-engine/internal/persistence/memory"
+	s3store "probability-engine/internal/persistence/s3"
 	"probability-engine/internal/ports"
 	"probability-engine/internal/rules"
-	memsrc "probability-engine/internal/source/memory"
+	lokisrc "probability-engine/internal/source/loki"
 )
 
 func main() {
 	log.Println("probability-engine starting")
 
-	events := []domain.Event{
-		{
-			ID:        "ev1",
-			Source:    "newsdata",
-			Title:     "Sanctions imposed on country A after energy infrastructure attack",
-			Summary:   "New export restrictions and sanctions may affect commodities and FX markets.",
-			URL:       "https://example.com/1",
-			Published: time.Now().UTC().Add(-1 * time.Hour),
-			Country:   "AA",
-			Labels:    map[string]string{"category": "geopolitics"},
-		},
-		{
-			ID:        "ev2",
-			Source:    "gta",
-			Title:     "Minerals export restrictions announced",
-			Summary:   "Supply chain disruption risk increases for industrial metals.",
-			URL:       "https://example.com/2",
-			Published: time.Now().UTC().Add(-30 * time.Minute),
-			Country:   "BB",
-			Labels:    map[string]string{"category": "trade"},
-		},
-		{
-			ID:        "ev3",
-			Source:    "coindesk",
-			Title:     "Pipeline outage raises concern over regional gas supply",
-			Summary:   "Conflict near energy infrastructure may disrupt gas markets.",
-			URL:       "https://example.com/3",
-			Published: time.Now().UTC().Add(-20 * time.Minute),
-			Country:   "CC",
-			Labels:    map[string]string{"category": "energy"},
-		},
-		{
-			ID:        "ev4",
-			Source:    "newsdata",
-			Title:     "Export ban expands after sanctions package",
-			Summary:   "New restrictions may deepen commodity market pressure.",
-			URL:       "https://example.com/4",
-			Published: time.Now().UTC().Add(-10 * time.Minute),
-			Country:   "AA",
-			Labels:    map[string]string{"category": "geopolitics"},
-		},
-	}
-
-	source := memsrc.New(events)
-	ruleLoader := rules.NewLoader("./rules")
+	source := buildEventSource()
+	ruleLoader := rules.NewLoader(envOrDefault("RULES_DIR", "./rules"))
 	ruleClassifier := rulecls.NewClassifier()
 
-	bayesModel := bayes.Model{
+	bayesModel := buildBayesModel()
+	bayesClassifier := bayes.NewClassifier(bayesModel, feat.NewDefaultExtractor())
+
+	signalStore, insightStore, runStateStore := buildStores()
+
+	eng := engine.New(engine.Options{
+		Source:       source,
+		RuleLoader:   ruleLoader,
+		Classifiers:  []ports.SignalClassifier{ruleClassifier, bayesClassifier},
+		Aggregator:   agg.NewAggregator(2, 1.2, 24*time.Hour),
+		Enricher:     noop.New(),
+		SignalStore:  signalStore,
+		InsightStore: insightStore,
+	})
+
+	worker := engine.NewWorker(engine.WorkerOptions{
+		Engine:       eng,
+		StateStore:   runStateStore,
+		JobName:      envOrDefault("ENGINE_JOB_NAME", "probability-engine"),
+		PollInterval: mustDuration("POLL_INTERVAL", 60*time.Second),
+		Lookback:     mustDuration("INITIAL_LOOKBACK", 15*time.Minute),
+	})
+
+	ctx := context.Background()
+	if err := worker.Run(ctx); err != nil {
+		log.Fatalf("worker stopped: %v", err)
+	}
+}
+
+func buildEventSource() ports.EventSource {
+	client := lokisrc.NewHTTPClient(
+		envOrDefault("LOKI_BASE_URL", "http://loki:3100"),
+		&http.Client{Timeout: 15 * time.Second},
+	)
+
+	query := envOrDefault("LOKI_EVENTS_QUERY", `{ingester="newsdata"}`)
+	limit := mustInt("LOKI_EVENTS_LIMIT", 1000)
+
+	log.Printf("source: backend=loki base_url=%s query=%s limit=%d",
+		envOrDefault("LOKI_BASE_URL", "http://loki:3100"),
+		query,
+		limit,
+	)
+
+	return lokisrc.New(client, query, limit, nil)
+}
+
+func buildStores() (ports.SignalStore, ports.InsightStore, ports.RunStateStore) {
+	backend := strings.ToLower(envOrDefault("PERSISTENCE_BACKEND", "memory"))
+
+	switch backend {
+	case "s3":
+		ctx := context.Background()
+
+		awsCfg, err := awsconfig.LoadDefaultConfig(
+			ctx,
+			awsconfig.WithRegion(envOrDefault("AWS_REGION", "eu-west-1")),
+		)
+		if err != nil {
+			log.Fatalf("load aws config: %v", err)
+		}
+
+		client := awss3.NewFromConfig(awsCfg)
+		store := s3store.New(
+			client,
+			envOrDefault("PROBABILITY_S3_BUCKET", "probability-engine-test-383874363596-us-east-1-an"),
+			envOrDefault("PROBABILITY_S3_PREFIX", "probability-engine"),
+			envOrDefault("PROBABILITY_S3_ENV", "dev"),
+			nil,
+		)
+
+		log.Printf("persistence: backend=s3 bucket=%s prefix=%s env=%s",
+			envOrDefault("PROBABILITY_S3_BUCKET", "probability-engine-test-383874363596-us-east-1-an"),
+			envOrDefault("PROBABILITY_S3_PREFIX", "probability-engine"),
+			envOrDefault("PROBABILITY_S3_ENV", "dev"),
+		)
+
+		return store, store, store
+
+	default:
+		log.Printf("persistence: backend=memory")
+		return memstore.NewSignalStore(), memstore.NewInsightStore(), memstore.NewRunStateStore()
+	}
+}
+
+func buildBayesModel() bayes.Model {
+	return bayes.Model{
 		Version: "v0",
 		Classes: map[string]bayes.ClassModel{
 			"sanctions": {
@@ -111,37 +161,44 @@ func main() {
 			},
 		},
 	}
+}
 
-	bayesClassifier := bayes.NewClassifier(bayesModel, feat.NewDefaultExtractor())
+func envOrDefault(name, def string) string {
+	v := os.Getenv(name)
+	if v == "" {
+		return def
+	}
+	return v
+}
 
-	signalStore := memstore.NewSignalStore()
-	insightStore := memstore.NewInsightStore()
+func mustEnv(name string) string {
+	v := os.Getenv(name)
+	if v == "" {
+		log.Fatalf("missing required env: %s", name)
+	}
+	return v
+}
 
-	eng := engine.New(engine.Options{
-		Source:       source,
-		RuleLoader:   ruleLoader,
-		Classifiers:  []ports.SignalClassifier{ruleClassifier, bayesClassifier},
-		Aggregator:   agg.NewAggregator(2, 1.2, 24*time.Hour),
-		Enricher:     noop.New(),
-		SignalStore:  signalStore,
-		InsightStore: insightStore,
-	})
-
-	from := time.Now().UTC().Add(-24 * time.Hour)
-	res, err := eng.Run(context.Background(), from)
+func mustInt(name string, def int) int {
+	v := os.Getenv(name)
+	if v == "" {
+		return def
+	}
+	out, err := strconv.Atoi(v)
 	if err != nil {
-		log.Fatalf("engine run failed: %v", err)
+		log.Fatalf("invalid int for %s: %q", name, v)
 	}
+	return out
+}
 
-	log.Printf("engine run complete: events=%d signals=%d insights=%d", res.Events, res.Signals, res.Insights)
-
-	for _, s := range signalStore.Snapshot() {
-		log.Printf("signal: id=%s kind=%s event=%s classifier=%s prob=%.2f scope=%v",
-			s.ID, s.Kind, s.EventID, s.Classifier, s.Probability, s.MarketScope)
+func mustDuration(name string, def time.Duration) time.Duration {
+	v := os.Getenv(name)
+	if v == "" {
+		return def
 	}
-
-	for _, in := range insightStore.Snapshot() {
-		log.Printf("insight: id=%s title=%q prob=%.2f severity=%s signals=%d",
-			in.ID, in.Title, in.Probability, in.Severity, len(in.Signals))
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		log.Fatalf("invalid duration for %s: %q", name, v)
 	}
+	return d
 }

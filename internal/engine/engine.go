@@ -70,6 +70,7 @@ func (e *Engine) Run(ctx context.Context, from time.Time) (RunResult, error) {
 	if err != nil {
 		return result, err
 	}
+	log.Printf("engine: fetched events=%d from=%s", len(events), from.Format(time.RFC3339))
 	result.Events = len(events)
 
 	rules, err := e.ruleLoader.LoadSignalRules(ctx)

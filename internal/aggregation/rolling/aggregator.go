@@ -154,6 +154,7 @@ func buildTitle(kind string, scope []string, n int) string {
 	}
 	return kind + " signal cluster affecting " + scopeText + " (" + strconv.Itoa(n) + " signals)"
 }
+
 func buildSummary(sig domain.Signal, n int) string {
 	if n == 1 {
 		return "A high-confidence signal indicates a potential market-moving development."
@@ -197,7 +198,7 @@ func buildEvidence(signals []domain.Signal, eventsByID map[string]domain.Event) 
 			continue
 		}
 		out = append(out, domain.InsightEvidence{
-			SignalID:    s.ID,
+			InsightID:   s.ID,
 			EventID:     ev.ID,
 			Source:      ev.Source,
 			URL:         ev.URL,
