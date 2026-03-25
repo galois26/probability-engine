@@ -1,0 +1,11 @@
+.git
+.gitignore
+out
+bin
+tmp
+dist
+coverage.out
+*.log
+Dockerfile*
+docker-compose*
+README.md
