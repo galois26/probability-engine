@@ -3,6 +3,7 @@ package s3
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"probability-engine/internal/domain"
 )
@@ -23,5 +24,7 @@ func (s *Store) SaveSignals(ctx context.Context, signals []domain.Signal) error 
 	if err := s.putJSON(ctx, s.runKey("signals", now), payload); err != nil {
 		return fmt.Errorf("save signals run snapshot: %w", err)
 	}
+	log.Printf("s3 store: writing signals latest key=%s", s.latestKey("signals"))
+	log.Printf("s3 store: writing signals run key=%s", s.runKey("signals", now))
 	return nil
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"sort"
 	"time"
 
@@ -48,6 +49,9 @@ func (s *Source) FetchEvents(ctx context.Context, from time.Time) ([]domain.Even
 	entries, err := s.client.QueryRange(ctx, s.query, from.UTC(), to.UTC(), s.limit)
 	if err != nil {
 		return nil, fmt.Errorf("query loki: %w", err)
+	}
+	if len(entries) == 0 {
+		log.Printf("loki source: no entries found for query=%s", s.query)
 	}
 
 	out := make([]domain.Event, 0, len(entries))

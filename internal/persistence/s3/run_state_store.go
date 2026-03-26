@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"path"
 	"time"
 )
@@ -37,6 +38,7 @@ func (s *Store) SaveLastRun(ctx context.Context, job string, t time.Time) error 
 		UpdatedAt: now,
 		Schema:    "v1",
 	}
+	log.Printf("s3 store: writing state key=%s", s.runStateKey(job))
 	return s.putJSON(ctx, s.runStateKey(job), st)
 }
 
