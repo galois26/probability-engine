@@ -95,18 +95,20 @@ func buildStores() (ports.SignalStore, ports.InsightStore, ports.RunStateStore) 
 		}
 
 		client := awss3.NewFromConfig(awsCfg)
+		bucket := envOrDefault("PROBABILITY_S3_BUCKET", "probability-engine-test-383874363596-us-east-1-an")
+		prefix := envOrDefault("PROBABILITY_S3_PREFIX", "probability-engine")
+		envName := envOrDefault("PROBABILITY_S3_ENV", "test")
+		region := envOrDefault("AWS_REGION", "us-east-1")
 		store := s3store.New(
 			client,
-			envOrDefault("PROBABILITY_S3_BUCKET", "probability-engine-test-383874363596-us-east-1-an"),
-			envOrDefault("PROBABILITY_S3_PREFIX", "probability-engine"),
-			envOrDefault("PROBABILITY_S3_ENV", "dev"),
+			bucket,
+			prefix,
+			envName,
 			nil,
 		)
 
-		log.Printf("persistence: backend=s3 bucket=%s prefix=%s env=%s",
-			envOrDefault("PROBABILITY_S3_BUCKET", "probability-engine-test-383874363596-us-east-1-an"),
-			envOrDefault("PROBABILITY_S3_PREFIX", "probability-engine"),
-			envOrDefault("PROBABILITY_S3_ENV", "dev"),
+		log.Printf("persistence: backend=s3 bucket=%q prefix=%q env=%q region=%q",
+			bucket, prefix, envName, region,
 		)
 
 		return store, store, store
@@ -124,24 +126,32 @@ func buildBayesModel() bayes.Model {
 			"sanctions": {
 				Prior: 0.4,
 				Likelihoods: map[string]float64{
-					"sanctions":                  0.8,
-					"export":                     0.6,
-					"restrictions":               0.7,
-					"energy":                     0.5,
-					"infrastructure":             0.4,
-					"label:category=geopolitics": 0.7,
+					"sanctions":                  0.85,
+					"embargo":                    0.85,
+					"sanctioned":                 0.75,
+					"ban":                        0.70,
+					"energy":                     0.35,
+					"infrastructure":             0.20,
+					"label:category=geopolitics": 0.70,
 				},
 				MarketScope: []string{"fx", "commodities"},
 				Direction:   "negative",
 			},
 			"supply_chain": {
-				Prior: 0.3,
+				Prior: 0.20,
 				Likelihoods: map[string]float64{
-					"minerals":             0.8,
-					"supply":               0.6,
-					"chain":                0.5,
-					"disruption":           0.7,
-					"label:category=trade": 0.6,
+					"minerals":             0.85,
+					"shortages":            0.85,
+					"bottleneck":           0.80,
+					"disruption":           0.75,
+					"logistics":            0.75,
+					"industrial":           0.65,
+					"metals":               0.75,
+					"label:category=trade": 0.70,
+
+					// keep these lower if you keep them at all
+					"supply": 0.35,
+					"chain":  0.30,
 				},
 				MarketScope: []string{"metals", "commodities"},
 				Direction:   "negative",
@@ -149,12 +159,11 @@ func buildBayesModel() bayes.Model {
 			"conflict_energy": {
 				Prior: 0.3,
 				Likelihoods: map[string]float64{
-					"conflict":              0.7,
-					"energy":                0.7,
-					"infrastructure":        0.6,
-					"pipeline":              0.7,
-					"gas":                   0.6,
-					"label:category=energy": 0.7,
+					"conflict":              0.85,
+					"infrastructure":        0.70,
+					"pipeline":              0.70,
+					"gas":                   0.60,
+					"label:category=energy": 0.70,
 				},
 				MarketScope: []string{"oil", "gas", "energy"},
 				Direction:   "negative",

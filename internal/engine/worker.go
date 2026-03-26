@@ -89,6 +89,12 @@ func (w *Worker) runOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if res.Events == 0 {
+		log.Printf("worker: no new events found in window (from=%s to=%s)",
+			from.Format(time.RFC3339),
+			now.Format(time.RFC3339),
+		)
+	}
 
 	if err := w.stateStore.SaveLastRun(ctx, w.jobName, now); err != nil {
 		return err

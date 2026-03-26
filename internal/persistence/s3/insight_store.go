@@ -3,6 +3,7 @@ package s3
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"probability-engine/internal/domain"
 )
@@ -23,6 +24,8 @@ func (s *Store) SaveInsights(ctx context.Context, insights []domain.Insight) err
 	if err := s.putJSON(ctx, s.runKey("insights", now), payload); err != nil {
 		return fmt.Errorf("save insights run snapshot: %w", err)
 	}
+	log.Printf("s3 store: writing insights latest key=%s", s.latestKey("insights"))
+	log.Printf("s3 store: writing insights run key=%s", s.runKey("insights", now))
 	return nil
 }
 
