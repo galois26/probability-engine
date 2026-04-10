@@ -2,25 +2,36 @@ package domain
 
 import "time"
 
-type Signal struct {
+type Insight struct {
 	ID          string            `json:"id"`
-	EventID     string            `json:"eventId"`
-	Kind        string            `json:"kind"`
+	Title       string            `json:"title"`
 	MarketScope []string          `json:"marketScope"`
-	Direction   Direction         `json:"direction"`
 	Probability float64           `json:"probability"`
-	Classifier  string            `json:"classifier"`
-	Features    []string          `json:"features,omitempty"`
-	Explanation string            `json:"explanation,omitempty"`
+	Direction   Direction         `json:"direction"`
+	Severity    Severity          `json:"severity"`
+	Status      InsightStatus     `json:"status"`
+	Summary     string            `json:"summary"`
+	Signals     []string          `json:"signals"`
+	Evidence    []InsightEvidence `json:"evidence"`
+	Flags       InsightFlags      `json:"flags"`
 	Labels      map[string]string `json:"labels,omitempty"`
 	CreatedAt   time.Time         `json:"createdAt"`
-	Trace       SignalTrace       `json:"trace"`
+	UpdatedAt   time.Time         `json:"updatedAt"`
 }
 
-type SignalTrace struct {
-	EventID       string   `json:"eventId"`
-	MatchedRules  []string `json:"matchedRules,omitempty"`
-	MatchedTerms  []string `json:"matchedTerms,omitempty"`
-	ModelVersion  string   `json:"modelVersion,omitempty"`
-	ClassifierRun string   `json:"classifierRun,omitempty"`
+type InsightEvidence struct {
+	InsightID   string    `json:"insightId"`
+	EventID     string    `json:"eventId"`
+	Source      string    `json:"source"`
+	URL         string    `json:"url"`
+	Published   time.Time `json:"published"`
+	WhyIncluded string    `json:"whyIncluded"`
+}
+
+type InsightFlags struct {
+	Acknowledged  bool   `json:"acknowledged"`
+	Silenced      bool   `json:"silenced"`
+	DuplicateOf   string `json:"duplicateOf,omitempty"`
+	FalsePositive bool   `json:"falsePositive"`
+	Notes         string `json:"notes,omitempty"`
 }
