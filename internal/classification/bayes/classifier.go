@@ -34,20 +34,67 @@ func NewClassifier(model Model, extractor features.Extractor) *Classifier {
 func (c *Classifier) Name() string { return "naive_bayes" }
 
 func (c *Classifier) Classify(ctx context.Context, ev domain.Event, rules []domain.SignalRule) ([]domain.Signal, error) {
+	result, err := c.Assess(ctx, ev, rules)
+	if err != nil {
+		return nil, err
+	}
+	return result.Signals, nil
+}
+
+func (c *Classifier) Assess(ctx context.Context, ev domain.Event, rules []domain.SignalRule) (domain.ClassifierAssessmentResult, error) {
 	_ = ctx
 	_ = rules
 
 	if len(c.model.Classes) == 0 {
-		return nil, nil
+		return domain.ClassifierAssessmentResult{
+			Classifier: c.Name(),
+			Features: domain.FeatureAssessment{
+				HasFeatures: false,
+				Reason:      "classifier model has no classes",
+			},
+			Rules: domain.RuleAssessment{
+				Evaluated: false,
+				Matched:   false,
+				Reason:    "not applicable for naive bayes classifier",
+			},
+			NaiveBayes: domain.NaiveBayesAssessment{
+				Evaluated: false,
+				Reason:    "classifier model has no classes",
+			},
+			Decision: domain.ClassificationDecision{
+				State:    domain.DecisionRejectedNoMatch,
+				Accepted: false,
+				Reasons:  []string{"classifier model has no classes"},
+			},
+		}, nil
 	}
 
 	tokens := c.extractor.Extract(ev)
 	if len(tokens) == 0 {
-		return nil, nil
+		return domain.ClassifierAssessmentResult{
+			Classifier: c.Name(),
+			Features: domain.FeatureAssessment{
+				HasFeatures: false,
+				Reason:      "extractor returned no tokens",
+			},
+			Rules: domain.RuleAssessment{
+				Evaluated: false,
+				Matched:   false,
+				Reason:    "not applicable for naive bayes classifier",
+			},
+			NaiveBayes: domain.NaiveBayesAssessment{
+				Evaluated: false,
+				Reason:    "skipped because extractor returned no tokens",
+			},
+			Decision: domain.ClassificationDecision{
+				State:    domain.DecisionRejectedNoFeatures,
+				Accepted: false,
+				Reasons:  []string{"extractor returned no tokens"},
+			},
+		}, nil
 	}
 
 	scores := make([]scored, 0, len(c.model.Classes))
-
 	for className, classModel := range c.model.Classes {
 		logProb := math.Log(maxFloat(classModel.Prior, 1e-9))
 		for _, tok := range tokens {
@@ -63,15 +110,86 @@ func (c *Classifier) Classify(ctx context.Context, ev domain.Event, rules []doma
 	sort.Slice(scores, func(i, j int) bool { return scores[i].score > scores[j].score })
 	top := scores[0]
 
-	if !passesClassGate(top.class, tokens) {
-		return nil, nil
+	classScores := make([]domain.ClassScore, 0, len(scores))
+	topProbs := make(map[string]float64, len(scores))
+	for _, s := range scores {
+		p := calibratedProbability(scores, s.class)
+		topProbs[s.class] = p
+		classScores = append(classScores, domain.ClassScore{
+			Class:       s.class,
+			Score:       s.score,
+			Probability: p,
+		})
 	}
 
-	prob := calibratedProbability(scores, top.class)
-	prob = applySourceWeight(prob, ev.Source, ev.Labels)
+	gatePassed := passesClassGate(top.class, tokens)
+	if !gatePassed {
+		return domain.ClassifierAssessmentResult{
+			Classifier: c.Name(),
+			Features: domain.FeatureAssessment{
+				HasFeatures: true,
+				Tokens:      tokens,
+				Keywords:    tokens,
+				Reason:      "feature extraction succeeded",
+			},
+			Rules: domain.RuleAssessment{
+				Evaluated: false,
+				Matched:   false,
+				Reason:    "not applicable for naive bayes classifier",
+			},
+			NaiveBayes: domain.NaiveBayesAssessment{
+				Evaluated:      true,
+				PredictedClass: top.class,
+				Scores:         classScores,
+				Reason:         "top class failed class gate",
+			},
+			Decision: domain.ClassificationDecision{
+				State:        domain.DecisionRejectedNoMatch,
+				Accepted:     false,
+				PrimaryClass: top.class,
+				Confidence:   topProbs[top.class],
+				Reasons: []string{
+					"top class failed class gate",
+				},
+			},
+		}, nil
+	}
 
-	if prob < classThreshold(top.class) {
-		return nil, nil
+	prob := topProbs[top.class]
+	weightedProb := applySourceWeight(prob, ev.Source, ev.Labels)
+	threshold := classThreshold(top.class)
+
+	if weightedProb < threshold {
+		return domain.ClassifierAssessmentResult{
+			Classifier: c.Name(),
+			Features: domain.FeatureAssessment{
+				HasFeatures: true,
+				Tokens:      tokens,
+				Keywords:    tokens,
+				Reason:      "feature extraction succeeded",
+			},
+			Rules: domain.RuleAssessment{
+				Evaluated: false,
+				Matched:   false,
+				Reason:    "not applicable for naive bayes classifier",
+			},
+			NaiveBayes: domain.NaiveBayesAssessment{
+				Evaluated:      true,
+				PredictedClass: top.class,
+				Scores:         classScores,
+				Reason:         "top class probability below threshold after source weighting",
+			},
+			Decision: domain.ClassificationDecision{
+				State:        domain.DecisionRejectedBelowThreshold,
+				Accepted:     false,
+				PrimaryClass: top.class,
+				Confidence:   weightedProb,
+				Threshold:    threshold,
+				Reasons: []string{
+					"top class probability below threshold after source weighting",
+				},
+			},
+		}, nil
 	}
 
 	classModel := c.model.Classes[top.class]
@@ -83,7 +201,7 @@ func (c *Classifier) Classify(ctx context.Context, ev domain.Event, rules []doma
 		Kind:        top.class,
 		MarketScope: append([]string(nil), classModel.MarketScope...),
 		Direction:   domain.Direction(classModel.Direction),
-		Probability: prob,
+		Probability: weightedProb,
 		Classifier:  c.Name(),
 		Features:    tokens,
 		Explanation: "classified by naive Bayes model",
@@ -97,11 +215,43 @@ func (c *Classifier) Classify(ctx context.Context, ev domain.Event, rules []doma
 	if sig.Direction == "" {
 		sig.Direction = domain.DirectionUnknown
 	}
-	log.Printf("BAYES_DEBUG entered classify event=%s", ev.ID)
 
-	log.Printf("BAYES_DEBUG classified event=%s kind=%s prob=%.2f source=%s title=%q tokens=%v",
-		ev.ID, top.class, prob, ev.Source, ev.Title, tokens)
-	return []domain.Signal{sig}, nil
+	log.Printf("BAYES_DEBUG entered assess event=%s", ev.ID)
+	log.Printf("BAYES_DEBUG assessed event=%s kind=%s prob=%.2f source=%s title=%q tokens=%v",
+		ev.ID, top.class, weightedProb, ev.Source, ev.Title, tokens)
+
+	return domain.ClassifierAssessmentResult{
+		Classifier: c.Name(),
+		Features: domain.FeatureAssessment{
+			HasFeatures: true,
+			Tokens:      tokens,
+			Keywords:    tokens,
+			Reason:      "feature extraction succeeded",
+		},
+		Rules: domain.RuleAssessment{
+			Evaluated: false,
+			Matched:   false,
+			Reason:    "not applicable for naive bayes classifier",
+		},
+		NaiveBayes: domain.NaiveBayesAssessment{
+			Evaluated:      true,
+			PredictedClass: top.class,
+			Scores:         classScores,
+			Reason:         "top class accepted after class gate and threshold",
+		},
+		Decision: domain.ClassificationDecision{
+			State:        domain.DecisionAcceptedSignal,
+			Accepted:     true,
+			PrimaryClass: top.class,
+			Confidence:   weightedProb,
+			Threshold:    threshold,
+			Reasons: []string{
+				"top class passed class gate",
+				"top class probability met threshold after source weighting",
+			},
+		},
+		Signals: []domain.Signal{sig},
+	}, nil
 }
 
 func passesClassGate(className string, tokens []string) bool {

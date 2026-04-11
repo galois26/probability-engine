@@ -179,7 +179,7 @@ func TestSource_FetchEvents_DedupesAndSorts(t *testing.T) {
 		},
 	}
 
-	src := New(client, `{job="multi-ingester"}`, 100, func() time.Time { return now })
+	src := New(client, `{job="multi-ingester"}`, 100, "forward", func() time.Time { return now })
 
 	got, err := src.FetchEvents(context.Background(), now.Add(-10*time.Minute))
 	if err != nil {
@@ -203,7 +203,7 @@ func TestSource_FetchEvents_DedupesAndSorts(t *testing.T) {
 }
 
 func TestSource_FetchEvents_PropagatesClientError(t *testing.T) {
-	src := New(errorClient{}, `{job="multi-ingester"}`, 100, func() time.Time {
+	src := New(errorClient{}, `{job="multi-ingester"}`, 100, "forward", func() time.Time {
 		return time.Date(2026, 3, 22, 18, 0, 0, 0, time.UTC)
 	})
 
@@ -217,13 +217,13 @@ type stubClient struct {
 	entries []Entry
 }
 
-func (s stubClient) QueryRange(ctx context.Context, query string, start, end time.Time, limit int) ([]Entry, error) {
+func (s stubClient) QueryRange(ctx context.Context, spec QuerySpec) ([]Entry, error) {
 	return append([]Entry(nil), s.entries...), nil
 }
 
 type errorClient struct{}
 
-func (errorClient) QueryRange(ctx context.Context, query string, start, end time.Time, limit int) ([]Entry, error) {
+func (errorClient) QueryRange(ctx context.Context, spec QuerySpec) ([]Entry, error) {
 	return nil, context.DeadlineExceeded
 }
 

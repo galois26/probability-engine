@@ -12,7 +12,15 @@ import (
 )
 
 type Client interface {
-	QueryRange(ctx context.Context, query string, start, end time.Time, limit int) ([]Entry, error)
+	QueryRange(ctx context.Context, spec QuerySpec) ([]Entry, error)
+}
+
+type QuerySpec struct {
+	LogQL     string
+	From      time.Time
+	To        time.Time
+	Limit     int
+	Direction string
 }
 
 type Entry struct {
@@ -22,35 +30,78 @@ type Entry struct {
 }
 
 type Source struct {
-	client Client
-	query  string
-	limit  int
-	now    func() time.Time
+	client    Client
+	query     string
+	limit     int
+	direction string
+	now       func() time.Time
 }
 
-func New(client Client, query string, limit int, now func() time.Time) *Source {
+func New(client Client, query string, limit int, direction string, now func() time.Time) *Source {
 	if limit <= 0 {
 		limit = 1000
+	}
+	if direction == "" {
+		direction = "forward"
 	}
 	if now == nil {
 		now = func() time.Time { return time.Now().UTC() }
 	}
 	return &Source{
-		client: client,
-		query:  query,
-		limit:  limit,
-		now:    now,
+		client:    client,
+		query:     query,
+		limit:     limit,
+		direction: direction,
+		now:       now,
 	}
 }
 
 func (s *Source) FetchEvents(ctx context.Context, from time.Time) ([]domain.Event, error) {
-	to := s.now()
+	spec := QuerySpec{
+		LogQL:     s.query,
+		From:      from.UTC(),
+		To:        s.now().UTC(),
+		Limit:     s.limit,
+		Direction: s.direction,
+	}
+	return s.FetchEventsWithQuery(ctx, spec)
+}
 
-	entries, err := s.client.QueryRange(ctx, s.query, from.UTC(), to.UTC(), s.limit)
+func (s *Source) FetchEventsWithQuery(ctx context.Context, spec QuerySpec) ([]domain.Event, error) {
+	if spec.LogQL == "" {
+		return nil, fmt.Errorf("loki query is empty")
+	}
+	if spec.Limit <= 0 {
+		spec.Limit = s.limit
+		if spec.Limit <= 0 {
+			spec.Limit = 1000
+		}
+	}
+	if spec.Direction == "" {
+		spec.Direction = s.direction
+		if spec.Direction == "" {
+			spec.Direction = "forward"
+		}
+	}
+	if spec.To.IsZero() {
+		spec.To = s.now().UTC()
+	}
+
+	entries, err := s.client.QueryRange(ctx, spec)
 	if err != nil {
 		return nil, fmt.Errorf("query loki: %w", err)
 	}
-	log.Printf("loki source: fetched entries=%d query=%s from=%s to=%s", len(entries), s.query, from.Format(time.RFC3339), to.Format(time.RFC3339))
+
+	log.Printf(
+		"loki source: fetched entries=%d query=%s from=%s to=%s direction=%s limit=%d",
+		len(entries),
+		spec.LogQL,
+		spec.From.Format(time.RFC3339),
+		spec.To.Format(time.RFC3339),
+		spec.Direction,
+		spec.Limit,
+	)
+
 	out := make([]domain.Event, 0, len(entries))
 	seen := make(map[string]struct{}, len(entries))
 
@@ -120,6 +171,7 @@ func decodeEvent(e Entry) (domain.Event, bool, error) {
 
 	return ev, true, nil
 }
+
 func cloneMap(in map[string]string) map[string]string {
 	if in == nil {
 		return nil

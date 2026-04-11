@@ -2,47 +2,83 @@ package loki
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 )
 
 type HTTPClient struct {
 	baseURL    string
+	username   string
+	password   string
+	tenantID   string
 	httpClient *http.Client
 }
 
-func NewHTTPClient(baseURL string, httpClient *http.Client) *HTTPClient {
-	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 15 * time.Second}
+func NewHTTPClient(baseURL, username, password, tenantID string, timeout time.Duration, insecureSkipTLS bool) *HTTPClient {
+	if timeout <= 0 {
+		timeout = 15 * time.Second
 	}
+
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	if insecureSkipTLS {
+		transport.TLSClientConfig = &tls.Config{
+			InsecureSkipVerify: true,
+		}
+	}
+
 	return &HTTPClient{
-		baseURL:    baseURL,
-		httpClient: httpClient,
+		baseURL:  strings.TrimRight(baseURL, "/"),
+		username: username,
+		password: password,
+		tenantID: tenantID,
+		httpClient: &http.Client{
+			Timeout:   timeout,
+			Transport: transport,
+		},
 	}
 }
 
-func (c *HTTPClient) QueryRange(ctx context.Context, query string, start, end time.Time, limit int) ([]Entry, error) {
+func (c *HTTPClient) QueryRange(ctx context.Context, spec QuerySpec) ([]Entry, error) {
 	u, err := url.Parse(c.baseURL + "/loki/api/v1/query_range")
 	if err != nil {
 		return nil, fmt.Errorf("parse loki url: %w", err)
 	}
 
+	limit := spec.Limit
+	if limit <= 0 {
+		limit = 1000
+	}
+
+	direction := spec.Direction
+	if direction == "" {
+		direction = "forward"
+	}
+
 	q := u.Query()
-	q.Set("query", query)
-	q.Set("start", strconv.FormatInt(start.UTC().UnixNano(), 10))
-	q.Set("end", strconv.FormatInt(end.UTC().UnixNano(), 10))
+	q.Set("query", spec.LogQL)
+	q.Set("start", strconv.FormatInt(spec.From.UTC().UnixNano(), 10))
+	q.Set("end", strconv.FormatInt(spec.To.UTC().UnixNano(), 10))
 	q.Set("limit", strconv.Itoa(limit))
-	q.Set("direction", "forward")
+	q.Set("direction", direction)
 	u.RawQuery = q.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("build loki request: %w", err)
+	}
+
+	if c.username != "" || c.password != "" {
+		req.SetBasicAuth(c.username, c.password)
+	}
+	if c.tenantID != "" {
+		req.Header.Set("X-Scope-OrgID", c.tenantID)
 	}
 
 	resp, err := c.httpClient.Do(req)

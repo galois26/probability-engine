@@ -96,27 +96,56 @@ func (e *Engine) Run(ctx context.Context, from time.Time) (RunResult, error) {
 		eventsByID[ev.ID] = ev
 
 		eventSignals := make([]domain.Signal, 0, len(e.classifiers))
+		classifierResults := make([]domain.ClassifierAssessmentResult, 0, len(e.classifiers))
 
 		for _, classifier := range e.classifiers {
+			if assessing, ok := classifier.(ports.AssessingSignalClassifier); ok {
+				assessmentResult, err := assessing.Assess(ctx, ev, rules)
+				if err != nil {
+					return result, err
+				}
+
+				log.Printf(
+					"engine: classifier=%s event=%s assessed accepted=%t signals=%d",
+					classifier.Name(),
+					ev.ID,
+					assessmentResult.Decision.Accepted,
+					len(assessmentResult.Signals),
+				)
+
+				classifierResults = append(classifierResults, assessmentResult)
+				eventSignals = append(eventSignals, assessmentResult.Signals...)
+				rawSignals = append(rawSignals, assessmentResult.Signals...)
+				continue
+			}
+
 			signals, err := classifier.Classify(ctx, ev, rules)
 			if err != nil {
 				return result, err
 			}
-			log.Printf("engine: classifier=%s event=%s produced %d signals", classifier.Name(), ev.ID, len(signals))
 
+			log.Printf(
+				"engine: classifier=%s event=%s produced %d signals (no assessment)",
+				classifier.Name(),
+				ev.ID,
+				len(signals),
+			)
+
+			classifierResults = append(classifierResults, fallbackClassifierAssessmentResult(classifier.Name(), signals))
 			eventSignals = append(eventSignals, signals...)
 			rawSignals = append(rawSignals, signals...)
 		}
 
-		assessment := buildEventAssessment(now, ev, eventSignals)
+		assessment := buildEventAssessment(now, ev, classifierResults, eventSignals)
 		assessments = append(assessments, assessment)
 
 		log.Printf(
-			"engine: assessment event=%s state=%s accepted=%t signals=%d",
+			"engine: assessment event=%s state=%s accepted=%t signals=%d classifiers=%d",
 			ev.ID,
 			assessment.Decision.State,
 			assessment.Decision.Accepted,
 			len(assessment.Signals),
+			len(assessment.Classifiers),
 		)
 	}
 
@@ -170,110 +199,4 @@ func (e *Engine) Run(ctx context.Context, from time.Time) (RunResult, error) {
 	result.Insights = len(insights)
 
 	return result, nil
-}
-
-func buildEventAssessment(now time.Time, ev domain.Event, signals []domain.Signal) domain.EventAssessment {
-	decision := classifyEventDecision(signals)
-
-	reasons := []string(nil)
-	if decision.Accepted {
-		reasons = []string{"at least one classifier emitted a signal"}
-	} else {
-		reasons = []string{"no classifier emitted a signal"}
-	}
-	decision.Reasons = reasons
-
-	return domain.EventAssessment{
-		ID:         buildAssessmentID(now, ev.ID),
-		RunID:      buildRunID(now),
-		AssessedAt: now,
-		Event:      newEventSnapshot(ev),
-		Features: domain.FeatureAssessment{
-			HasFeatures: false,
-			Reason:      "feature assessment not available via current classifier interface",
-		},
-		Rules: domain.RuleAssessment{
-			Evaluated: false,
-			Matched:   false,
-			Reason:    "rule assessment not available via current classifier interface",
-		},
-		NaiveBayes: domain.NaiveBayesAssessment{
-			Evaluated: false,
-			Reason:    "naive bayes assessment not available via current classifier interface",
-		},
-		Decision: decision,
-		Signals:  toSignalSnapshots(signals),
-	}
-}
-
-func classifyEventDecision(signals []domain.Signal) domain.ClassificationDecision {
-	if len(signals) == 0 {
-		return domain.ClassificationDecision{
-			State:    domain.DecisionRejectedNoMatch,
-			Accepted: false,
-		}
-	}
-
-	top := signals[0]
-	for _, s := range signals[1:] {
-		if s.Probability > top.Probability {
-			top = s
-		}
-	}
-
-	return domain.ClassificationDecision{
-		State:        domain.DecisionAcceptedSignal,
-		Accepted:     true,
-		PrimaryClass: top.Kind,
-		Confidence:   top.Probability,
-		Reasons:      nil,
-	}
-}
-
-func newEventSnapshot(ev domain.Event) domain.EventSnapshot {
-	return domain.EventSnapshot{
-		ID:        ev.ID,
-		Source:    ev.Source,
-		Title:     ev.Title,
-		Summary:   ev.Summary,
-		URL:       ev.URL,
-		Published: ev.Published,
-		Lang:      ev.Lang,
-		Country:   ev.Country,
-		Labels:    ev.Labels,
-		Raw:       ev.Raw,
-	}
-}
-
-func buildRunID(now time.Time) string {
-	return now.UTC().Format(time.RFC3339)
-}
-
-func buildAssessmentID(now time.Time, eventID string) string {
-	return buildRunID(now) + ":" + eventID
-}
-
-func toSignalSnapshots(signals []domain.Signal) []domain.SignalSnapshot {
-	if len(signals) == 0 {
-		return nil
-	}
-
-	out := make([]domain.SignalSnapshot, 0, len(signals))
-	for _, s := range signals {
-		out = append(out, domain.SignalSnapshot{
-			ID:          s.ID,
-			EventID:     s.EventID,
-			Kind:        s.Kind,
-			MarketScope: s.MarketScope,
-			Direction:   s.Direction,
-			Probability: s.Probability,
-			Classifier:  s.Classifier,
-			Features:    s.Features,
-			Explanation: s.Explanation,
-			Labels:      s.Labels,
-			CreatedAt:   s.CreatedAt,
-			Trace:       s.Trace,
-		})
-	}
-	return out
 }

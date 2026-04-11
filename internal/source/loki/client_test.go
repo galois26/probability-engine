@@ -49,14 +49,17 @@ func TestHTTPClient_QueryRange_ParsesResponse(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewHTTPClient(srv.URL, srv.Client())
+	client := NewHTTPClient(srv.URL, "", "", "", 15*time.Second, false)
 
 	got, err := client.QueryRange(
 		context.Background(),
-		`{job="multi-ingester"}`,
-		time.Unix(1711126700, 0).UTC(),
-		time.Unix(1711126900, 0).UTC(),
-		100,
+		QuerySpec{
+			LogQL:     `{job="multi-ingester"}`,
+			From:      time.Unix(1711126700, 0).UTC(),
+			To:        time.Unix(1711126900, 0).UTC(),
+			Limit:     100,
+			Direction: "forward",
+		},
 	)
 	if err != nil {
 		t.Fatalf("QueryRange() error = %v", err)
@@ -92,14 +95,17 @@ func TestHTTPClient_QueryRange_Non200(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewHTTPClient(srv.URL, srv.Client())
+	client := NewHTTPClient(srv.URL, "", "", "", 15*time.Second, false)
 
 	_, err := client.QueryRange(
 		context.Background(),
-		`{job="multi-ingester"}`,
-		time.Now().UTC().Add(-time.Minute),
-		time.Now().UTC(),
-		100,
+		QuerySpec{
+			LogQL:     `{job="multi-ingester"}`,
+			From:      time.Now().UTC().Add(-time.Minute),
+			To:        time.Now().UTC(),
+			Limit:     100,
+			Direction: "forward",
+		},
 	)
 	if err == nil {
 		t.Fatal("QueryRange() error = nil, want non-nil")

@@ -1,8 +1,6 @@
 package domain
 
-import (
-	"time"
-)
+import "time"
 
 type DecisionState string
 
@@ -14,15 +12,22 @@ const (
 )
 
 type EventAssessment struct {
-	ID         string                 `json:"id"`
-	RunID      string                 `json:"runId"`
-	AssessedAt time.Time              `json:"assessedAt"`
-	Event      EventSnapshot          `json:"event"`
+	ID          string                       `json:"id"`
+	RunID       string                       `json:"runId"`
+	AssessedAt  time.Time                    `json:"assessedAt"`
+	Event       EventSnapshot                `json:"event"`
+	Decision    ClassificationDecision       `json:"decision"`
+	Signals     []SignalSnapshot             `json:"signals,omitempty"`
+	Classifiers []ClassifierAssessmentResult `json:"classifiers,omitempty"`
+}
+
+type ClassifierAssessmentResult struct {
+	Classifier string                 `json:"classifier"`
 	Features   FeatureAssessment      `json:"features"`
 	Rules      RuleAssessment         `json:"rules"`
 	NaiveBayes NaiveBayesAssessment   `json:"naiveBayes"`
 	Decision   ClassificationDecision `json:"decision"`
-	Signals    []SignalSnapshot       `json:"signals,omitempty"`
+	Signals    []Signal               `json:"signals,omitempty"`
 }
 
 type EventSnapshot struct {
@@ -98,18 +103,18 @@ type SignalSnapshot struct {
 	Trace       SignalTrace       `json:"trace"`
 }
 
-func NewEventSnapshot(e Event) EventSnapshot {
+func NewEventSnapshot(ev Event) EventSnapshot {
 	return EventSnapshot{
-		ID:        e.ID,
-		Source:    e.Source,
-		Title:     e.Title,
-		Summary:   e.Summary,
-		URL:       e.URL,
-		Published: e.Published,
-		Lang:      e.Lang,
-		Country:   e.Country,
-		Labels:    e.Labels,
-		Raw:       e.Raw,
+		ID:        ev.ID,
+		Source:    ev.Source,
+		Title:     ev.Title,
+		Summary:   ev.Summary,
+		URL:       ev.URL,
+		Published: ev.Published,
+		Lang:      ev.Lang,
+		Country:   ev.Country,
+		Labels:    ev.Labels,
+		Raw:       ev.Raw,
 	}
 }
 
