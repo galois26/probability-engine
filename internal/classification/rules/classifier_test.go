@@ -91,3 +91,136 @@ func TestClassifier_Classify(t *testing.T) {
 		})
 	}
 }
+
+func TestClassifier_Assess_NoFeatures(t *testing.T) {
+	c := NewClassifier()
+
+	result, err := c.Assess(context.Background(), domain.Event{
+		ID:      "ev-empty",
+		Title:   "",
+		Summary: "",
+	}, nil)
+	if err != nil {
+		t.Fatalf("Assess() error = %v", err)
+	}
+
+	if result.Classifier != "rules" {
+		t.Fatalf("classifier = %q, want %q", result.Classifier, "rules")
+	}
+	if result.Features.HasFeatures {
+		t.Fatalf("HasFeatures = true, want false")
+	}
+	if result.Decision.State != domain.DecisionRejectedNoFeatures {
+		t.Fatalf("decision state = %s, want %s", result.Decision.State, domain.DecisionRejectedNoFeatures)
+	}
+	if result.Rules.Evaluated {
+		t.Fatalf("Rules.Evaluated = true, want false")
+	}
+	if len(result.Signals) != 0 {
+		t.Fatalf("signals = %d, want 0", len(result.Signals))
+	}
+}
+
+func TestClassifier_Assess_RejectedBelowThreshold(t *testing.T) {
+	c := NewClassifier()
+
+	rules := []domain.SignalRule{
+		{
+			Name:             "conflict_energy",
+			Threshold:        0.80,
+			PositiveFeatures: []string{"pipeline"},
+			NegativeFeatures: nil,
+			MarketScope:      []string{"oil", "gas", "energy"},
+			DirectionDefault: domain.DirectionNegative,
+		},
+	}
+
+	result, err := c.Assess(context.Background(), domain.Event{
+		ID:      "ev-threshold",
+		Title:   "Pipeline disruption reported",
+		Summary: "",
+	}, rules)
+	if err != nil {
+		t.Fatalf("Assess() error = %v", err)
+	}
+
+	if !result.Features.HasFeatures {
+		t.Fatalf("HasFeatures = false, want true")
+	}
+	if !result.Rules.Evaluated {
+		t.Fatalf("Rules.Evaluated = false, want true")
+	}
+	if result.Rules.Matched {
+		t.Fatalf("Rules.Matched = true, want false")
+	}
+	if result.Decision.State != domain.DecisionRejectedBelowThreshold {
+		t.Fatalf("decision state = %s, want %s", result.Decision.State, domain.DecisionRejectedBelowThreshold)
+	}
+	if len(result.Rules.Matches) != 1 {
+		t.Fatalf("rule matches = %d, want 1", len(result.Rules.Matches))
+	}
+	if result.Rules.Matches[0].Matched {
+		t.Fatalf("match.Matched = true, want false")
+	}
+	if len(result.Rules.Matches[0].MatchedTerms) == 0 {
+		t.Fatalf("matched terms empty, want at least one term")
+	}
+	if len(result.Signals) != 0 {
+		t.Fatalf("signals = %d, want 0", len(result.Signals))
+	}
+}
+
+func TestClassifier_Assess_AcceptedSignal(t *testing.T) {
+	c := NewClassifier()
+
+	rules := []domain.SignalRule{
+		{
+			Name:             "conflict_energy",
+			Threshold:        0.60,
+			PositiveFeatures: []string{"pipeline", "refinery"},
+			NegativeFeatures: nil,
+			MarketScope:      []string{"oil", "gas", "energy"},
+			DirectionDefault: domain.DirectionNegative,
+		},
+	}
+
+	result, err := c.Assess(context.Background(), domain.Event{
+		ID:      "ev-accepted",
+		Title:   "Pipeline and refinery outage reported",
+		Summary: "Pipeline disruption spreads across refinery network.",
+	}, rules)
+	if err != nil {
+		t.Fatalf("Assess() error = %v", err)
+	}
+
+	if result.Classifier != "rules" {
+		t.Fatalf("classifier = %q, want %q", result.Classifier, "rules")
+	}
+	if !result.Features.HasFeatures {
+		t.Fatalf("HasFeatures = false, want true")
+	}
+	if !result.Rules.Evaluated {
+		t.Fatalf("Rules.Evaluated = false, want true")
+	}
+	if !result.Rules.Matched {
+		t.Fatalf("Rules.Matched = false, want true")
+	}
+	if result.Decision.State != domain.DecisionAcceptedSignal {
+		t.Fatalf("decision state = %s, want %s", result.Decision.State, domain.DecisionAcceptedSignal)
+	}
+	if !result.Decision.Accepted {
+		t.Fatalf("Decision.Accepted = false, want true")
+	}
+	if result.Decision.PrimaryClass != "conflict_energy" {
+		t.Fatalf("primary class = %q, want %q", result.Decision.PrimaryClass, "conflict_energy")
+	}
+	if len(result.Signals) != 1 {
+		t.Fatalf("signals = %d, want 1", len(result.Signals))
+	}
+	if result.Signals[0].Kind != "conflict_energy" {
+		t.Fatalf("signal kind = %q, want %q", result.Signals[0].Kind, "conflict_energy")
+	}
+	if result.NaiveBayes.Evaluated {
+		t.Fatalf("NaiveBayes.Evaluated = true, want false")
+	}
+}

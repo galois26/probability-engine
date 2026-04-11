@@ -17,6 +17,11 @@ import (
 	"probability-engine/internal/testutil"
 )
 
+type fixedClock struct {
+	t time.Time
+}
+
+func (f fixedClock) Now() time.Time { return f.t }
 func TestEngine_Run_EndToEnd(t *testing.T) {
 	now := time.Now().UTC()
 
@@ -149,14 +154,17 @@ func TestEngine_Run_EndToEnd(t *testing.T) {
 	signalStore := memstore.NewSignalStore()
 	insightStore := memstore.NewInsightStore()
 
+	assessmentStore := memstore.NewEventAssessmentStore()
+
 	eng := New(Options{
-		Source:       source,
-		RuleLoader:   ruleLoader,
-		Classifiers:  []ports.SignalClassifier{ruleClassifier, bayesClassifier},
-		Aggregator:   agg.NewAggregator(2, 1.2, 24*time.Hour),
-		Enricher:     noop.New(),
-		SignalStore:  signalStore,
-		InsightStore: insightStore,
+		Source:               source,
+		RuleLoader:           ruleLoader,
+		Classifiers:          []ports.SignalClassifier{ruleClassifier, bayesClassifier},
+		Aggregator:           agg.NewAggregator(2, 1.2, 24*time.Hour),
+		Enricher:             noop.New(),
+		SignalStore:          signalStore,
+		EventAssessmentStore: assessmentStore,
+		InsightStore:         insightStore,
 	})
 
 	got, err := eng.Run(context.Background(), now.Add(-24*time.Hour))
@@ -183,9 +191,256 @@ func TestEngine_Run_EndToEnd(t *testing.T) {
 	if len(insights) != 3 {
 		t.Fatalf("stored insights = %d, want 3", len(insights))
 	}
+	assessments := assessmentStore.Snapshot()
+	if len(assessments) != 4 {
+		t.Fatalf("stored assessments = %d, want 4", len(assessments))
+	}
 
 	assertResolvedSignals(t, signals)
 	assertInsights(t, insights)
+}
+
+func TestEngine_Run_SavesAssessmentsWhenNoSignals(t *testing.T) {
+	now := time.Date(2026, 4, 11, 10, 0, 0, 0, time.UTC)
+
+	events := []domain.Event{
+		{
+			ID:        "ev1",
+			Source:    "newsdata",
+			Title:     "Local weather remains stable",
+			Summary:   "No major disruptions reported.",
+			URL:       "https://example.com/1",
+			Published: now.Add(-1 * time.Hour),
+		},
+		{
+			ID:        "ev2",
+			Source:    "newsdata",
+			Title:     "Sports event scheduled for next week",
+			Summary:   "Regional teams prepare for the tournament.",
+			URL:       "https://example.com/2",
+			Published: now.Add(-30 * time.Minute),
+		},
+	}
+
+	source := memsrc.New(events)
+	ruleLoader := stubRuleLoader{rules: nil}
+	signalStore := memstore.NewSignalStore()
+	assessmentStore := memstore.NewEventAssessmentStore()
+	insightStore := memstore.NewInsightStore()
+
+	eng := New(Options{
+		Source:               source,
+		RuleLoader:           ruleLoader,
+		Classifiers:          []ports.SignalClassifier{stubSignalClassifier{name: "legacy"}},
+		Aggregator:           agg.NewAggregator(2, 1.2, 24*time.Hour),
+		Enricher:             noop.New(),
+		SignalStore:          signalStore,
+		EventAssessmentStore: assessmentStore,
+		InsightStore:         insightStore,
+		Clock:                fixedClock{t: now},
+	})
+
+	got, err := eng.Run(context.Background(), now.Add(-24*time.Hour))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	if got.Events != 2 {
+		t.Fatalf("Events = %d, want 2", got.Events)
+	}
+	if got.Signals != 0 {
+		t.Fatalf("Signals = %d, want 0", got.Signals)
+	}
+	if got.Insights != 0 {
+		t.Fatalf("Insights = %d, want 0", got.Insights)
+	}
+
+	assessments := assessmentStore.Snapshot()
+	if len(assessments) != 2 {
+		t.Fatalf("stored assessments = %d, want 2", len(assessments))
+	}
+
+	for _, a := range assessments {
+		if a.Decision.Accepted {
+			t.Fatalf("assessment for event %s unexpectedly accepted", a.Event.ID)
+		}
+		if a.Decision.State != domain.DecisionRejectedNoMatch {
+			t.Fatalf("assessment state = %s, want %s", a.Decision.State, domain.DecisionRejectedNoMatch)
+		}
+		if len(a.Classifiers) != 1 {
+			t.Fatalf("classifiers = %d, want 1", len(a.Classifiers))
+		}
+	}
+}
+
+func TestEngine_Run_UsesAssessingClassifierResults(t *testing.T) {
+	now := time.Date(2026, 4, 11, 10, 0, 0, 0, time.UTC)
+
+	ev := domain.Event{
+		ID:        "ev1",
+		Source:    "newsdata",
+		Title:     "Sanctions announced on key exports",
+		Summary:   "Government expands export ban and sanctions package.",
+		URL:       "https://example.com/1",
+		Published: now.Add(-1 * time.Hour),
+	}
+
+	sig := domain.Signal{
+		ID:          "sig1",
+		EventID:     ev.ID,
+		Kind:        "sanctions",
+		MarketScope: []string{"fx", "commodities"},
+		Direction:   domain.DirectionNegative,
+		Probability: 0.81,
+		Classifier:  "naive_bayes",
+		Features:    []string{"sanctions", "export", "ban"},
+		CreatedAt:   now,
+		Trace: domain.SignalTrace{
+			EventID:      ev.ID,
+			ModelVersion: "test-v1",
+		},
+	}
+
+	classifierResult := domain.ClassifierAssessmentResult{
+		Classifier: "naive_bayes",
+		Features: domain.FeatureAssessment{
+			HasFeatures: true,
+			Tokens:      []string{"sanctions", "export", "ban"},
+			Keywords:    []string{"sanctions", "export", "ban"},
+			Reason:      "feature extraction succeeded",
+		},
+		Rules: domain.RuleAssessment{
+			Evaluated: false,
+			Matched:   false,
+			Reason:    "not applicable for naive bayes classifier",
+		},
+		NaiveBayes: domain.NaiveBayesAssessment{
+			Evaluated:      true,
+			PredictedClass: "sanctions",
+			Scores: []domain.ClassScore{
+				{Class: "sanctions", Score: -1.2, Probability: 0.81},
+				{Class: "supply_chain", Score: -3.4, Probability: 0.11},
+			},
+		},
+		Decision: domain.ClassificationDecision{
+			State:        domain.DecisionAcceptedSignal,
+			Accepted:     true,
+			PrimaryClass: "sanctions",
+			Confidence:   0.81,
+			Threshold:    0.63,
+		},
+		Signals: []domain.Signal{sig},
+	}
+
+	source := memsrc.New([]domain.Event{ev})
+	assessmentStore := memstore.NewEventAssessmentStore()
+
+	eng := New(Options{
+		Source:               source,
+		RuleLoader:           stubRuleLoader{},
+		Classifiers:          []ports.SignalClassifier{stubAssessingClassifier{name: "naive_bayes", result: classifierResult}},
+		Aggregator:           agg.NewAggregator(2, 1.2, 24*time.Hour),
+		Enricher:             noop.New(),
+		SignalStore:          memstore.NewSignalStore(),
+		EventAssessmentStore: assessmentStore,
+		InsightStore:         memstore.NewInsightStore(),
+		Clock:                fixedClock{t: now},
+	})
+
+	_, err := eng.Run(context.Background(), now.Add(-24*time.Hour))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	assessments := assessmentStore.Snapshot()
+	if len(assessments) != 1 {
+		t.Fatalf("stored assessments = %d, want 1", len(assessments))
+	}
+
+	a := assessments[0]
+	if a.Decision.State != domain.DecisionAcceptedSignal {
+		t.Fatalf("decision state = %s, want %s", a.Decision.State, domain.DecisionAcceptedSignal)
+	}
+	if len(a.Signals) != 1 {
+		t.Fatalf("signals = %d, want 1", len(a.Signals))
+	}
+	if len(a.Classifiers) != 1 {
+		t.Fatalf("classifier results = %d, want 1", len(a.Classifiers))
+	}
+	if a.Classifiers[0].Classifier != "naive_bayes" {
+		t.Fatalf("classifier = %s, want naive_bayes", a.Classifiers[0].Classifier)
+	}
+	if !a.Classifiers[0].NaiveBayes.Evaluated {
+		t.Fatalf("expected naive bayes evaluation")
+	}
+	if a.Classifiers[0].NaiveBayes.PredictedClass != "sanctions" {
+		t.Fatalf("predicted class = %s, want sanctions", a.Classifiers[0].NaiveBayes.PredictedClass)
+	}
+}
+
+func TestEngine_Run_LegacyClassifierGetsFallbackAssessment(t *testing.T) {
+	now := time.Date(2026, 4, 11, 10, 0, 0, 0, time.UTC)
+
+	ev := domain.Event{
+		ID:        "ev1",
+		Source:    "newsdata",
+		Title:     "Pipeline outage raises concern",
+		Summary:   "Energy infrastructure disruption reported.",
+		URL:       "https://example.com/1",
+		Published: now.Add(-1 * time.Hour),
+	}
+
+	sig := domain.Signal{
+		ID:          "sig1",
+		EventID:     ev.ID,
+		Kind:        "conflict_energy",
+		MarketScope: []string{"energy"},
+		Direction:   domain.DirectionNegative,
+		Probability: 0.72,
+		Classifier:  "legacy_rules",
+		CreatedAt:   now,
+	}
+
+	assessmentStore := memstore.NewEventAssessmentStore()
+
+	eng := New(Options{
+		Source:               memsrc.New([]domain.Event{ev}),
+		RuleLoader:           stubRuleLoader{},
+		Classifiers:          []ports.SignalClassifier{stubSignalClassifier{name: "legacy_rules", signals: []domain.Signal{sig}}},
+		Aggregator:           agg.NewAggregator(2, 1.2, 24*time.Hour),
+		Enricher:             noop.New(),
+		SignalStore:          memstore.NewSignalStore(),
+		EventAssessmentStore: assessmentStore,
+		InsightStore:         memstore.NewInsightStore(),
+		Clock:                fixedClock{t: now},
+	})
+
+	_, err := eng.Run(context.Background(), now.Add(-24*time.Hour))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	assessments := assessmentStore.Snapshot()
+	if len(assessments) != 1 {
+		t.Fatalf("stored assessments = %d, want 1", len(assessments))
+	}
+
+	a := assessments[0]
+	if len(a.Classifiers) != 1 {
+		t.Fatalf("classifier results = %d, want 1", len(a.Classifiers))
+	}
+	if a.Classifiers[0].Classifier != "legacy_rules" {
+		t.Fatalf("classifier = %s, want legacy_rules", a.Classifiers[0].Classifier)
+	}
+	if a.Classifiers[0].Features.HasFeatures {
+		t.Fatalf("expected fallback classifier features.HasFeatures=false")
+	}
+	if a.Classifiers[0].Decision.State != domain.DecisionAcceptedSignal {
+		t.Fatalf("decision state = %s, want %s", a.Classifiers[0].Decision.State, domain.DecisionAcceptedSignal)
+	}
+	if len(a.Signals) != 1 {
+		t.Fatalf("signals = %d, want 1", len(a.Signals))
+	}
 }
 
 type stubRuleLoader struct {
@@ -266,4 +521,30 @@ func assertInsights(t *testing.T, insights []domain.Insight) {
 	if supply.Severity != domain.SeverityMedium && supply.Severity != domain.SeverityHigh {
 		t.Fatalf("supply_chain severity = %s, want medium or high", supply.Severity)
 	}
+}
+
+type stubAssessingClassifier struct {
+	name   string
+	result domain.ClassifierAssessmentResult
+}
+
+func (s stubAssessingClassifier) Name() string { return s.name }
+
+func (s stubAssessingClassifier) Classify(ctx context.Context, ev domain.Event, rules []domain.SignalRule) ([]domain.Signal, error) {
+	return append([]domain.Signal(nil), s.result.Signals...), nil
+}
+
+func (s stubAssessingClassifier) Assess(ctx context.Context, ev domain.Event, rules []domain.SignalRule) (domain.ClassifierAssessmentResult, error) {
+	return s.result, nil
+}
+
+type stubSignalClassifier struct {
+	name    string
+	signals []domain.Signal
+}
+
+func (s stubSignalClassifier) Name() string { return s.name }
+
+func (s stubSignalClassifier) Classify(ctx context.Context, ev domain.Event, rules []domain.SignalRule) ([]domain.Signal, error) {
+	return append([]domain.Signal(nil), s.signals...), nil
 }

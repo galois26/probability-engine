@@ -18,25 +18,27 @@ type realClock struct{}
 func (realClock) Now() time.Time { return time.Now().UTC() }
 
 type Engine struct {
-	source       ports.EventSource
-	ruleLoader   ports.RuleLoader
-	classifiers  []ports.SignalClassifier
-	aggregator   ports.InsightAggregator
-	enricher     ports.InsightEnricher
-	signalStore  ports.SignalStore
-	insightStore ports.InsightStore
-	clock        Clock
+	source               ports.EventSource
+	ruleLoader           ports.RuleLoader
+	classifiers          []ports.SignalClassifier
+	aggregator           ports.InsightAggregator
+	enricher             ports.InsightEnricher
+	signalStore          ports.SignalStore
+	eventAssessmentStore ports.EventAssessmentStore
+	insightStore         ports.InsightStore
+	clock                Clock
 }
 
 type Options struct {
-	Source       ports.EventSource
-	RuleLoader   ports.RuleLoader
-	Classifiers  []ports.SignalClassifier
-	Aggregator   ports.InsightAggregator
-	Enricher     ports.InsightEnricher
-	SignalStore  ports.SignalStore
-	InsightStore ports.InsightStore
-	Clock        Clock
+	Source               ports.EventSource
+	RuleLoader           ports.RuleLoader
+	Classifiers          []ports.SignalClassifier
+	Aggregator           ports.InsightAggregator
+	Enricher             ports.InsightEnricher
+	SignalStore          ports.SignalStore
+	EventAssessmentStore ports.EventAssessmentStore
+	InsightStore         ports.InsightStore
+	Clock                Clock
 }
 
 func New(opts Options) *Engine {
@@ -46,14 +48,15 @@ func New(opts Options) *Engine {
 	}
 
 	return &Engine{
-		source:       opts.Source,
-		ruleLoader:   opts.RuleLoader,
-		classifiers:  opts.Classifiers,
-		aggregator:   opts.Aggregator,
-		enricher:     opts.Enricher,
-		signalStore:  opts.SignalStore,
-		insightStore: opts.InsightStore,
-		clock:        c,
+		source:               opts.Source,
+		ruleLoader:           opts.RuleLoader,
+		classifiers:          opts.Classifiers,
+		aggregator:           opts.Aggregator,
+		enricher:             opts.Enricher,
+		signalStore:          opts.SignalStore,
+		eventAssessmentStore: opts.EventAssessmentStore,
+		insightStore:         opts.InsightStore,
+		clock:                c,
 	}
 }
 
@@ -83,22 +86,78 @@ func (e *Engine) Run(ctx context.Context, from time.Time) (RunResult, error) {
 			r.Name, r.Threshold, r.PositiveFeatures, r.NegativeFeatures, r.MarketScope, r.DirectionDefault,
 		)
 	}
+
+	now := e.clock.Now()
 	eventsByID := make(map[string]domain.Event, len(events))
 	rawSignals := make([]domain.Signal, 0, len(events))
+	assessments := make([]domain.EventAssessment, 0, len(events))
 
 	for _, ev := range events {
 		eventsByID[ev.ID] = ev
 
+		eventSignals := make([]domain.Signal, 0, len(e.classifiers))
+		classifierResults := make([]domain.ClassifierAssessmentResult, 0, len(e.classifiers))
+
 		for _, classifier := range e.classifiers {
+			if assessing, ok := classifier.(ports.AssessingSignalClassifier); ok {
+				assessmentResult, err := assessing.Assess(ctx, ev, rules)
+				if err != nil {
+					return result, err
+				}
+
+				log.Printf(
+					"engine: classifier=%s event=%s assessed accepted=%t signals=%d",
+					classifier.Name(),
+					ev.ID,
+					assessmentResult.Decision.Accepted,
+					len(assessmentResult.Signals),
+				)
+
+				classifierResults = append(classifierResults, assessmentResult)
+				eventSignals = append(eventSignals, assessmentResult.Signals...)
+				rawSignals = append(rawSignals, assessmentResult.Signals...)
+				continue
+			}
+
 			signals, err := classifier.Classify(ctx, ev, rules)
 			if err != nil {
 				return result, err
 			}
-			log.Printf("engine: classifier=%s event=%s produced %d signals", classifier.Name(), ev.ID, len(signals))
+
+			log.Printf(
+				"engine: classifier=%s event=%s produced %d signals (no assessment)",
+				classifier.Name(),
+				ev.ID,
+				len(signals),
+			)
+
+			classifierResults = append(classifierResults, fallbackClassifierAssessmentResult(classifier.Name(), signals))
+			eventSignals = append(eventSignals, signals...)
 			rawSignals = append(rawSignals, signals...)
 		}
+
+		assessment := buildEventAssessment(now, ev, classifierResults, eventSignals)
+		assessments = append(assessments, assessment)
+
+		log.Printf(
+			"engine: assessment event=%s state=%s accepted=%t signals=%d classifiers=%d",
+			ev.ID,
+			assessment.Decision.State,
+			assessment.Decision.Accepted,
+			len(assessment.Signals),
+			len(assessment.Classifiers),
+		)
 	}
+
 	log.Printf("engine: raw signals=%d", len(rawSignals))
+	log.Printf("engine: event assessments=%d", len(assessments))
+
+	if e.eventAssessmentStore != nil {
+		if err := e.eventAssessmentStore.SaveEventAssessments(ctx, assessments); err != nil {
+			return result, err
+		}
+	}
+
 	resolvedSignals := resolveSignals(rawSignals)
 	log.Printf("engine: resolved signals=%d", len(resolvedSignals))
 

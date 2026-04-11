@@ -19,3 +19,10 @@ type InsightSnapshot struct {
 	Count       int              `json:"count"`
 	Items       []domain.Insight `json:"items"`
 }
+
+type EventAssessmentSnapshot struct {
+	Version     string                   `json:"version"`
+	GeneratedAt time.Time                `json:"generatedAt"`
+	Count       int                      `json:"count"`
+	Items       []domain.EventAssessment `json:"items"`
+}

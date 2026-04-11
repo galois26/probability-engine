@@ -19,20 +19,71 @@ func NewClassifier() *Classifier {
 func (c *Classifier) Name() string { return "rules" }
 
 func (c *Classifier) Classify(ctx context.Context, ev domain.Event, rules []domain.SignalRule) ([]domain.Signal, error) {
+	result, err := c.Assess(ctx, ev, rules)
+	if err != nil {
+		return nil, err
+	}
+	return result.Signals, nil
+}
+
+func (c *Classifier) Assess(ctx context.Context, ev domain.Event, rules []domain.SignalRule) (domain.ClassifierAssessmentResult, error) {
 	_ = ctx
 
-	text := strings.ToLower(ev.Title + "\n" + ev.Summary)
+	text := strings.ToLower(strings.TrimSpace(ev.Title + "\n" + ev.Summary))
+	tokens := extractRuleAssessmentTokens(ev)
+
+	if len(tokens) == 0 {
+		return domain.ClassifierAssessmentResult{
+			Classifier: c.Name(),
+			Features: domain.FeatureAssessment{
+				HasFeatures: false,
+				Reason:      "no extractable features from title/summary",
+			},
+			Rules: domain.RuleAssessment{
+				Evaluated: false,
+				Matched:   false,
+				Reason:    "skipped because no extractable features were found",
+			},
+			NaiveBayes: domain.NaiveBayesAssessment{
+				Evaluated: false,
+				Reason:    "not applicable for rules classifier",
+			},
+			Decision: domain.ClassificationDecision{
+				State:    domain.DecisionRejectedNoFeatures,
+				Accepted: false,
+				Reasons:  []string{"no extractable features from title/summary"},
+			},
+		}, nil
+	}
 
 	out := make([]domain.Signal, 0, len(rules))
+	matches := make([]domain.RuleMatchResult, 0, len(rules))
 
 	for _, rule := range rules {
 		matchedTerms := matchTerms(text, rule.PositiveFeatures)
-		if len(matchedTerms) == 0 {
-			continue
+		score := scoreRuleMatch(text, rule)
+
+		match := domain.RuleMatchResult{
+			RuleID:       rule.Name,
+			RuleName:     rule.Name,
+			Matched:      false,
+			Score:        score,
+			MatchedTerms: matchedTerms,
 		}
 
-		score := scoreRuleMatch(text, rule)
-		if score < rule.Threshold {
+		switch {
+		case len(matchedTerms) == 0:
+			match.Reason = "no positive features matched"
+		case score < rule.Threshold:
+			match.Reason = "matched positive features but score below threshold"
+		default:
+			match.Matched = true
+			match.Reason = "rule matched and passed threshold"
+		}
+
+		matches = append(matches, match)
+
+		if !match.Matched {
 			continue
 		}
 
@@ -57,7 +108,57 @@ func (c *Classifier) Classify(ctx context.Context, ev domain.Event, rules []doma
 		})
 	}
 
-	return out, nil
+	ruleAssessment := domain.RuleAssessment{
+		Evaluated: true,
+		Matched:   len(out) > 0,
+		Matches:   matches,
+	}
+
+	decision := domain.ClassificationDecision{
+		State:    domain.DecisionRejectedNoMatch,
+		Accepted: false,
+		Reasons:  []string{"no rules matched above threshold"},
+	}
+
+	if len(out) > 0 {
+		top := out[0]
+		for _, s := range out[1:] {
+			if s.Probability > top.Probability {
+				top = s
+			}
+		}
+
+		decision = domain.ClassificationDecision{
+			State:        domain.DecisionAcceptedSignal,
+			Accepted:     true,
+			PrimaryClass: top.Kind,
+			Confidence:   top.Probability,
+			Reasons:      []string{"one or more rules matched above threshold"},
+		}
+	} else if anyRuleBelowThreshold(matches) {
+		decision = domain.ClassificationDecision{
+			State:    domain.DecisionRejectedBelowThreshold,
+			Accepted: false,
+			Reasons:  []string{"one or more rules matched terms but scored below threshold"},
+		}
+	}
+
+	return domain.ClassifierAssessmentResult{
+		Classifier: c.Name(),
+		Features: domain.FeatureAssessment{
+			HasFeatures: true,
+			Tokens:      tokens,
+			Keywords:    tokens,
+			Reason:      "extracted features from title/summary",
+		},
+		Rules: ruleAssessment,
+		NaiveBayes: domain.NaiveBayesAssessment{
+			Evaluated: false,
+			Reason:    "not applicable for rules classifier",
+		},
+		Decision: decision,
+		Signals:  out,
+	}, nil
 }
 
 func matchTerms(text string, terms []string) []string {
@@ -103,6 +204,39 @@ func scoreRuleMatch(text string, rule domain.SignalRule) float64 {
 		score = 0.92
 	}
 	return score
+}
+
+func extractRuleAssessmentTokens(ev domain.Event) []string {
+	seen := make(map[string]struct{})
+	out := make([]string, 0)
+
+	add := func(text string) {
+		for _, part := range strings.Fields(strings.ToLower(text)) {
+			token := strings.Trim(part, " \t\r\n,.;:!?()[]{}\"'")
+			if token == "" {
+				continue
+			}
+			if _, ok := seen[token]; ok {
+				continue
+			}
+			seen[token] = struct{}{}
+			out = append(out, token)
+		}
+	}
+
+	add(ev.Title)
+	add(ev.Summary)
+
+	return out
+}
+
+func anyRuleBelowThreshold(matches []domain.RuleMatchResult) bool {
+	for _, m := range matches {
+		if !m.Matched && len(m.MatchedTerms) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func buildSignalID(eventID, ruleName, classifier string) string {

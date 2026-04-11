@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"log"
-	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -35,16 +34,17 @@ func main() {
 	bayesModel := buildBayesModel()
 	bayesClassifier := bayes.NewClassifier(bayesModel, feat.NewDefaultExtractor())
 
-	signalStore, insightStore, runStateStore := buildStores()
+	signalStore, eventAssessmentStore, insightStore, runStateStore := buildStores()
 
 	eng := engine.New(engine.Options{
-		Source:       source,
-		RuleLoader:   ruleLoader,
-		Classifiers:  []ports.SignalClassifier{ruleClassifier, bayesClassifier},
-		Aggregator:   agg.NewAggregator(2, 1.2, 24*time.Hour),
-		Enricher:     noop.New(),
-		SignalStore:  signalStore,
-		InsightStore: insightStore,
+		Source:               source,
+		RuleLoader:           ruleLoader,
+		Classifiers:          []ports.SignalClassifier{ruleClassifier, bayesClassifier},
+		Aggregator:           agg.NewAggregator(2, 1.2, 24*time.Hour),
+		Enricher:             noop.New(),
+		SignalStore:          signalStore,
+		EventAssessmentStore: eventAssessmentStore,
+		InsightStore:         insightStore,
 	})
 
 	worker := engine.NewWorker(engine.WorkerOptions{
@@ -62,24 +62,53 @@ func main() {
 }
 
 func buildEventSource() ports.EventSource {
-	client := lokisrc.NewHTTPClient(
-		envOrDefault("LOKI_BASE_URL", "http://loki:3100"),
-		&http.Client{Timeout: 15 * time.Second},
-	)
+	baseURL := envOrDefault("LOKI_BASE_URL", "http://loki:3100")
+	username := envOrDefault("LOKI_USERNAME", "")
+	password := envOrDefault("LOKI_PASSWORD", "")
+	tenantID := envOrDefault("LOKI_TENANT_ID", "")
+	timeout := mustDuration("LOKI_TIMEOUT", 15*time.Second)
+	insecureSkipTLS := mustBool("LOKI_INSECURE_SKIP_TLS", false)
 
 	query := envOrDefault("LOKI_EVENTS_QUERY", `{ingester="newsdata"}`)
 	limit := mustInt("LOKI_EVENTS_LIMIT", 1000)
+	direction := envOrDefault("LOKI_QUERY_DIRECTION", "forward")
 
-	log.Printf("source: backend=loki base_url=%s query=%s limit=%d",
-		envOrDefault("LOKI_BASE_URL", "http://loki:3100"),
-		query,
-		limit,
+	client := lokisrc.NewHTTPClient(
+		baseURL,
+		username,
+		password,
+		tenantID,
+		timeout,
+		insecureSkipTLS,
 	)
 
-	return lokisrc.New(client, query, limit, nil)
+	log.Printf(
+		"source: backend=loki base_url=%s query=%s limit=%d direction=%s tenant=%t auth=%t timeout=%s insecure_skip_tls=%t",
+		baseURL,
+		query,
+		limit,
+		direction,
+		tenantID != "",
+		username != "" || password != "",
+		timeout,
+		insecureSkipTLS,
+	)
+
+	return lokisrc.New(
+		client,
+		query,
+		limit,
+		direction,
+		nil,
+	)
 }
 
-func buildStores() (ports.SignalStore, ports.InsightStore, ports.RunStateStore) {
+func buildStores() (
+	ports.SignalStore,
+	ports.EventAssessmentStore,
+	ports.InsightStore,
+	ports.RunStateStore,
+) {
 	backend := strings.ToLower(envOrDefault("PERSISTENCE_BACKEND", "memory"))
 
 	switch backend {
@@ -99,6 +128,7 @@ func buildStores() (ports.SignalStore, ports.InsightStore, ports.RunStateStore) 
 		prefix := envOrDefault("PROBABILITY_S3_PREFIX", "probability-engine")
 		envName := envOrDefault("PROBABILITY_S3_ENV", "test")
 		region := envOrDefault("AWS_REGION", "us-east-1")
+
 		store := s3store.New(
 			client,
 			bucket,
@@ -107,15 +137,23 @@ func buildStores() (ports.SignalStore, ports.InsightStore, ports.RunStateStore) 
 			nil,
 		)
 
-		log.Printf("persistence: backend=s3 bucket=%q prefix=%q env=%q region=%q",
-			bucket, prefix, envName, region,
+		log.Printf(
+			"persistence: backend=s3 bucket=%q prefix=%q env=%q region=%q assessments=true",
+			bucket,
+			prefix,
+			envName,
+			region,
 		)
 
-		return store, store, store
+		return store, store, store, store
 
 	default:
-		log.Printf("persistence: backend=memory")
-		return memstore.NewSignalStore(), memstore.NewInsightStore(), memstore.NewRunStateStore()
+		log.Printf("persistence: backend=memory assessments=true")
+		return memstore.NewSignalStore(),
+			memstore.NewEventAssessmentStore(),
+			memstore.NewInsightStore(),
+			memstore.NewRunStateStore()
+
 	}
 }
 
@@ -148,10 +186,8 @@ func buildBayesModel() bayes.Model {
 					"industrial":           0.65,
 					"metals":               0.75,
 					"label:category=trade": 0.70,
-
-					// keep these lower if you keep them at all
-					"supply": 0.35,
-					"chain":  0.30,
+					"supply":               0.35,
+					"chain":                0.30,
 				},
 				MarketScope: []string{"metals", "commodities"},
 				Direction:   "negative",
@@ -210,4 +246,21 @@ func mustDuration(name string, def time.Duration) time.Duration {
 		log.Fatalf("invalid duration for %s: %q", name, v)
 	}
 	return d
+}
+
+func mustBool(name string, def bool) bool {
+	v := strings.TrimSpace(strings.ToLower(os.Getenv(name)))
+	if v == "" {
+		return def
+	}
+
+	switch v {
+	case "1", "true", "yes", "y", "on":
+		return true
+	case "0", "false", "no", "n", "off":
+		return false
+	default:
+		log.Fatalf("invalid bool for %s: %q", name, v)
+		return def
+	}
 }
