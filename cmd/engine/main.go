@@ -14,6 +14,7 @@ import (
 	agg "probability-engine/internal/aggregation/rolling"
 	bayes "probability-engine/internal/classification/bayes"
 	feat "probability-engine/internal/classification/features"
+	"probability-engine/internal/classification/keywordscoring"
 	rulecls "probability-engine/internal/classification/rules"
 	"probability-engine/internal/engine"
 	noop "probability-engine/internal/enrichment/noop"
@@ -30,18 +31,20 @@ func main() {
 
 	source := buildEventSource()
 	ruleLoader := rules.NewLoader(envOrDefault("RULES_DIR", "./rules"))
+	// classifiers
 	ruleClassifier := rulecls.NewClassifier()
-
 	bayesModel := buildBayesModel()
 	bayesClassifier := bayes.NewClassifier(bayesModel, feat.NewDefaultExtractor())
+	keywordscoringClassifier := keywordscoring.NewClassifier()
 
+	// stores and publishers (signal store, event assessment store, insight store, run state store)
 	signalStore, eventAssessmentStore, insightStore, runStateStore := buildStores()
 	eventAssessmentPublisher := buildEventAssessmentPublisher()
 
 	eng := engine.New(engine.Options{
 		Source:                   source,
 		RuleLoader:               ruleLoader,
-		Classifiers:              []ports.SignalClassifier{ruleClassifier, bayesClassifier},
+		Classifiers:              []ports.SignalClassifier{ruleClassifier, bayesClassifier, keywordscoringClassifier},
 		Aggregator:               agg.NewAggregator(2, 1.2, 24*time.Hour),
 		Enricher:                 noop.New(),
 		SignalStore:              signalStore,
