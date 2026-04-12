@@ -17,10 +17,11 @@ import (
 	rulecls "probability-engine/internal/classification/rules"
 	"probability-engine/internal/engine"
 	noop "probability-engine/internal/enrichment/noop"
+	lokipersist "probability-engine/internal/persistence/loki"
 	memstore "probability-engine/internal/persistence/memory"
 	s3store "probability-engine/internal/persistence/s3"
 	"probability-engine/internal/ports"
-	"probability-engine/internal/rules"
+	rules "probability-engine/internal/rules"
 	lokisrc "probability-engine/internal/source/loki"
 )
 
@@ -35,16 +36,18 @@ func main() {
 	bayesClassifier := bayes.NewClassifier(bayesModel, feat.NewDefaultExtractor())
 
 	signalStore, eventAssessmentStore, insightStore, runStateStore := buildStores()
+	eventAssessmentPublisher := buildEventAssessmentPublisher()
 
 	eng := engine.New(engine.Options{
-		Source:               source,
-		RuleLoader:           ruleLoader,
-		Classifiers:          []ports.SignalClassifier{ruleClassifier, bayesClassifier},
-		Aggregator:           agg.NewAggregator(2, 1.2, 24*time.Hour),
-		Enricher:             noop.New(),
-		SignalStore:          signalStore,
-		EventAssessmentStore: eventAssessmentStore,
-		InsightStore:         insightStore,
+		Source:                   source,
+		RuleLoader:               ruleLoader,
+		Classifiers:              []ports.SignalClassifier{ruleClassifier, bayesClassifier},
+		Aggregator:               agg.NewAggregator(2, 1.2, 24*time.Hour),
+		Enricher:                 noop.New(),
+		SignalStore:              signalStore,
+		EventAssessmentStore:     eventAssessmentStore,
+		EventAssessmentPublisher: eventAssessmentPublisher,
+		InsightStore:             insightStore,
 	})
 
 	worker := engine.NewWorker(engine.WorkerOptions{
@@ -263,4 +266,45 @@ func mustBool(name string, def bool) bool {
 		log.Fatalf("invalid bool for %s: %q", name, v)
 		return def
 	}
+}
+
+func buildEventAssessmentPublisher() ports.EventAssessmentPublisher {
+	if !mustBool("LOKI_PUBLISH_ASSESSMENTS", false) {
+		log.Printf("loki publisher: disabled")
+		return nil
+	}
+
+	baseURL := envOrDefault("LOKI_PUSH_BASE_URL", envOrDefault("LOKI_BASE_URL", "http://loki:3100"))
+	username := envOrDefault("LOKI_PUSH_USERNAME", envOrDefault("LOKI_USERNAME", ""))
+	password := envOrDefault("LOKI_PUSH_PASSWORD", envOrDefault("LOKI_PASSWORD", ""))
+	tenantID := envOrDefault("LOKI_PUSH_TENANT_ID", envOrDefault("LOKI_TENANT_ID", ""))
+	timeout := mustDuration("LOKI_PUSH_TIMEOUT", 15*time.Second)
+	insecureSkipTLS := mustBool("LOKI_PUSH_INSECURE_SKIP_TLS", false)
+
+	pushClient := lokipersist.NewHTTPPushClient(
+		baseURL,
+		username,
+		password,
+		tenantID,
+		timeout,
+		insecureSkipTLS,
+	)
+
+	publisher := lokipersist.NewEventAssessmentPublisher(
+		pushClient,
+		envOrDefault("ENGINE_JOB_NAME", "probability-engine"),
+		envOrDefault("APP_ENV", "dev"),
+		nil,
+	)
+
+	log.Printf(
+		"loki publisher: enabled base_url=%s tenant=%t auth=%t timeout=%s insecure_skip_tls=%t",
+		baseURL,
+		tenantID != "",
+		username != "" || password != "",
+		timeout,
+		insecureSkipTLS,
+	)
+
+	return publisher
 }

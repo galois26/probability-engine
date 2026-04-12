@@ -18,27 +18,29 @@ type realClock struct{}
 func (realClock) Now() time.Time { return time.Now().UTC() }
 
 type Engine struct {
-	source               ports.EventSource
-	ruleLoader           ports.RuleLoader
-	classifiers          []ports.SignalClassifier
-	aggregator           ports.InsightAggregator
-	enricher             ports.InsightEnricher
-	signalStore          ports.SignalStore
-	eventAssessmentStore ports.EventAssessmentStore
-	insightStore         ports.InsightStore
-	clock                Clock
+	source                   ports.EventSource
+	ruleLoader               ports.RuleLoader
+	classifiers              []ports.SignalClassifier
+	aggregator               ports.InsightAggregator
+	enricher                 ports.InsightEnricher
+	signalStore              ports.SignalStore
+	eventAssessmentStore     ports.EventAssessmentStore
+	eventAssessmentPublisher ports.EventAssessmentPublisher
+	insightStore             ports.InsightStore
+	clock                    Clock
 }
 
 type Options struct {
-	Source               ports.EventSource
-	RuleLoader           ports.RuleLoader
-	Classifiers          []ports.SignalClassifier
-	Aggregator           ports.InsightAggregator
-	Enricher             ports.InsightEnricher
-	SignalStore          ports.SignalStore
-	EventAssessmentStore ports.EventAssessmentStore
-	InsightStore         ports.InsightStore
-	Clock                Clock
+	Source                   ports.EventSource
+	RuleLoader               ports.RuleLoader
+	Classifiers              []ports.SignalClassifier
+	Aggregator               ports.InsightAggregator
+	Enricher                 ports.InsightEnricher
+	SignalStore              ports.SignalStore
+	EventAssessmentStore     ports.EventAssessmentStore
+	EventAssessmentPublisher ports.EventAssessmentPublisher
+	InsightStore             ports.InsightStore
+	Clock                    Clock
 }
 
 func New(opts Options) *Engine {
@@ -48,15 +50,16 @@ func New(opts Options) *Engine {
 	}
 
 	return &Engine{
-		source:               opts.Source,
-		ruleLoader:           opts.RuleLoader,
-		classifiers:          opts.Classifiers,
-		aggregator:           opts.Aggregator,
-		enricher:             opts.Enricher,
-		signalStore:          opts.SignalStore,
-		eventAssessmentStore: opts.EventAssessmentStore,
-		insightStore:         opts.InsightStore,
-		clock:                c,
+		source:                   opts.Source,
+		ruleLoader:               opts.RuleLoader,
+		classifiers:              opts.Classifiers,
+		aggregator:               opts.Aggregator,
+		enricher:                 opts.Enricher,
+		signalStore:              opts.SignalStore,
+		eventAssessmentStore:     opts.EventAssessmentStore,
+		eventAssessmentPublisher: opts.EventAssessmentPublisher,
+		insightStore:             opts.InsightStore,
+		clock:                    c,
 	}
 }
 
@@ -154,6 +157,12 @@ func (e *Engine) Run(ctx context.Context, from time.Time) (RunResult, error) {
 
 	if e.eventAssessmentStore != nil {
 		if err := e.eventAssessmentStore.SaveEventAssessments(ctx, assessments); err != nil {
+			return result, err
+		}
+	}
+
+	if e.eventAssessmentPublisher != nil {
+		if err := e.eventAssessmentPublisher.PublishEventAssessments(ctx, assessments); err != nil {
 			return result, err
 		}
 	}
