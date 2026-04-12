@@ -219,18 +219,6 @@ func (e *Engine) Run(ctx context.Context, from time.Time) (RunResult, error) {
 		decisionCounts[a.Decision.State]++
 	}
 
-	log.Printf(
-		"engine metrics: events=%d assessments=%d accepted=%d rejected=%d raw_signals=%d resolved_signals=%d insights=%d states=%v",
-		len(events),
-		len(assessments),
-		acceptedCount,
-		rejectedCount,
-		len(rawSignals),
-		len(resolvedSignals),
-		len(insights),
-		decisionCounts,
-	)
-
 	result.Insights = len(insights)
 
 	return result, nil
