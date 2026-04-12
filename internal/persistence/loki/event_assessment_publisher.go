@@ -91,7 +91,10 @@ type assessmentLine struct {
 	AssessedAt   time.Time                     `json:"assessedAt"`
 	EventID      string                        `json:"eventId"`
 	Title        string                        `json:"title"`
+	Summary      string                        `json:"summary,omitempty"`
 	Source       string                        `json:"source"`
+	SourceID     string                        `json:"sourceId,omitempty"`
+	SourceName   string                        `json:"sourceName,omitempty"`
 	URL          string                        `json:"url,omitempty"`
 	Published    time.Time                     `json:"published,omitempty"`
 	Decision     domain.ClassificationDecision `json:"decision"`
@@ -100,18 +103,26 @@ type assessmentLine struct {
 }
 
 type classifierDecisionSummary struct {
-	Classifier string               `json:"classifier"`
-	State      domain.DecisionState `json:"state"`
-	Accepted   bool                 `json:"accepted"`
+	Classifier   string               `json:"classifier"`
+	State        domain.DecisionState `json:"state"`
+	Accepted     bool                 `json:"accepted"`
+	PrimaryClass string               `json:"primaryClass,omitempty"`
+	Confidence   float64              `json:"confidence,omitempty"`
+	Threshold    float64              `json:"threshold,omitempty"`
+	Reasons      []string             `json:"reasons,omitempty"`
 }
 
 func marshalAssessmentLine(a domain.EventAssessment) (string, error) {
 	classifiers := make([]classifierDecisionSummary, 0, len(a.Classifiers))
 	for _, c := range a.Classifiers {
 		classifiers = append(classifiers, classifierDecisionSummary{
-			Classifier: c.Classifier,
-			State:      c.Decision.State,
-			Accepted:   c.Decision.Accepted,
+			Classifier:   c.Classifier,
+			State:        c.Decision.State,
+			Accepted:     c.Decision.Accepted,
+			PrimaryClass: c.Decision.PrimaryClass,
+			Confidence:   c.Decision.Confidence,
+			Threshold:    c.Decision.Threshold,
+			Reasons:      c.Decision.Reasons,
 		})
 	}
 
@@ -121,7 +132,10 @@ func marshalAssessmentLine(a domain.EventAssessment) (string, error) {
 		AssessedAt:   a.AssessedAt,
 		EventID:      a.Event.ID,
 		Title:        a.Event.Title,
+		Summary:      a.Event.Summary,
 		Source:       a.Event.Source,
+		SourceID:     a.Event.Labels["source_id"],
+		SourceName:   a.Event.Labels["source_name"],
 		URL:          a.Event.URL,
 		Published:    a.Event.Published,
 		Decision:     a.Decision,
