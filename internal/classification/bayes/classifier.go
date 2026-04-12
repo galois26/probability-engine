@@ -18,7 +18,6 @@ type scored struct {
 	class string
 	score float64
 }
-
 type Classifier struct {
 	model     Model
 	extractor features.Extractor

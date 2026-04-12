@@ -9,16 +9,19 @@ positiveFeatures:
   - attacked
   - pipeline
   - refinery
+  - pipeline outage
+  - refinery fire
+  - refinery shutdown
+  - fuel depot attack
+  - terminal attack
 negativeFeatures:
   - ceasefire
   - operations restored
+  - output restored
 examples:
   - energy infrastructure attacked
   - pipeline outage after conflict
+  - refinery fire disrupts output
 labels:
   category: energy
 ---
-
-# conflict_energy
-
-Signals related to conflict impacting energy systems.

@@ -168,7 +168,7 @@ func matchTerms(text string, terms []string) []string {
 		if tt == "" {
 			continue
 		}
-		if strings.Contains(text, tt) {
+		if matchesFeature(text, tt) {
 			out = append(out, tt)
 		}
 	}
@@ -179,7 +179,7 @@ func scoreRuleMatch(text string, rule domain.SignalRule) float64 {
 	pos := 0
 	for _, f := range rule.PositiveFeatures {
 		ff := strings.ToLower(strings.TrimSpace(f))
-		if ff != "" && strings.Contains(text, ff) {
+		if ff != "" && matchesFeature(text, ff) {
 			pos++
 		}
 	}
@@ -187,7 +187,7 @@ func scoreRuleMatch(text string, rule domain.SignalRule) float64 {
 	neg := 0
 	for _, f := range rule.NegativeFeatures {
 		ff := strings.ToLower(strings.TrimSpace(f))
-		if ff != "" && strings.Contains(text, ff) {
+		if ff != "" && matchesFeature(text, ff) {
 			neg++
 		}
 	}
@@ -258,4 +258,29 @@ func cloneMap(in map[string]string) map[string]string {
 		out[k] = v
 	}
 	return out
+}
+
+func matchesFeature(text, feature string) bool {
+	if strings.Contains(text, feature) {
+		return true
+	}
+
+	// avoid breaking multi-word phrases
+	if strings.Contains(feature, " ") {
+		return false
+	}
+
+	// "shortage" -> "shortages"
+	if strings.HasSuffix(feature, "y") {
+		if strings.Contains(text, strings.TrimSuffix(feature, "y")+"ies") {
+			return true
+		}
+	}
+
+	// "shipment" -> "shipments"
+	if strings.Contains(text, feature+"s") {
+		return true
+	}
+
+	return false
 }
