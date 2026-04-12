@@ -205,6 +205,32 @@ func (e *Engine) Run(ctx context.Context, from time.Time) (RunResult, error) {
 			return result, err
 		}
 	}
+
+	acceptedCount := 0
+	rejectedCount := 0
+	decisionCounts := make(map[domain.DecisionState]int)
+
+	for _, a := range assessments {
+		if a.Decision.Accepted {
+			acceptedCount++
+		} else {
+			rejectedCount++
+		}
+		decisionCounts[a.Decision.State]++
+	}
+
+	log.Printf(
+		"engine metrics: events=%d assessments=%d accepted=%d rejected=%d raw_signals=%d resolved_signals=%d insights=%d states=%v",
+		len(events),
+		len(assessments),
+		acceptedCount,
+		rejectedCount,
+		len(rawSignals),
+		len(resolvedSignals),
+		len(insights),
+		decisionCounts,
+	)
+
 	result.Insights = len(insights)
 
 	return result, nil
