@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strings"
 	"time"
 
 	"probability-engine/internal/domain"
@@ -151,6 +152,9 @@ func decodeEvent(e Entry) (domain.Event, bool, error) {
 		return domain.Event{}, false, nil
 	}
 
+	labels := cloneMap(raw.Labels)
+	normalizeLabels(labels)
+
 	ev := domain.Event{
 		ID:        raw.ID,
 		Source:    raw.Source,
@@ -159,7 +163,7 @@ func decodeEvent(e Entry) (domain.Event, bool, error) {
 		URL:       raw.URL,
 		Published: raw.Published,
 		Country:   "",
-		Labels:    cloneMap(raw.Labels),
+		Labels:    labels,
 	}
 
 	if ev.Published.IsZero() {
@@ -170,6 +174,27 @@ func decodeEvent(e Entry) (domain.Event, bool, error) {
 	}
 
 	return ev, true, nil
+}
+
+func normalizeLabels(labels map[string]string) {
+	if labels == nil {
+		return
+	}
+
+	// Normalize publisher/source naming
+	if labels["source"] == "" && labels["news_source"] != "" {
+		labels["source"] = labels["news_source"]
+	}
+
+	// Map known numeric category codes into the semantic categories
+	// the Bayes model expects.
+	switch strings.TrimSpace(strings.ToLower(labels["category"])) {
+	case "121":
+		// TODO: verify this mapping against your upstream feed.
+		// Temporary placeholder so we can confirm whether label drift
+		// is the reason Bayes stopped contributing.
+		labels["category"] = "crypto"
+	}
 }
 
 func cloneMap(in map[string]string) map[string]string {

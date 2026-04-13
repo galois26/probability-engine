@@ -49,7 +49,7 @@ var allowedLabelTokens = map[string]struct{}{
 	"label:category=geopolitics": {},
 	"label:category=energy":      {},
 	"label:category=trade":       {},
-	"label:category=crypto":      {},
+	//"label:category=crypto":      {},
 }
 
 func (DefaultExtractor) Extract(ev domain.Event) []string {

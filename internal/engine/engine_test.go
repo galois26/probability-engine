@@ -17,11 +17,6 @@ import (
 	"probability-engine/internal/testutil"
 )
 
-type fixedClock struct {
-	t time.Time
-}
-
-func (f fixedClock) Now() time.Time { return f.t }
 func TestEngine_Run_EndToEnd(t *testing.T) {
 	now := time.Now().UTC()
 
@@ -522,6 +517,12 @@ func assertInsights(t *testing.T, insights []domain.Insight) {
 		t.Fatalf("supply_chain severity = %s, want medium or high", supply.Severity)
 	}
 }
+
+type fixedClock struct {
+	t time.Time
+}
+
+func (f fixedClock) Now() time.Time { return f.t }
 
 type stubAssessingClassifier struct {
 	name   string
