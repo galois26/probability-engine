@@ -30,19 +30,20 @@ type LokiConfig struct {
 	Timeout         time.Duration `yaml:"timeout"`
 	QueryLookback   time.Duration `yaml:"queryLookback"`
 	InsecureSkipTLS bool          `yaml:"insecureSkipTLS"`
-	EventsQuery     string
-	EventsLimit     int
-	QueryDirection  string
+	EventsQuery     string        `yaml:"eventsQuery"`
+	EventsLimit     int           `yaml:"eventsLimit"`
+	QueryDirection  string        `yaml:"queryDirection"`
+	Lookback        time.Duration `yaml:"lookback"`
 }
 
 // LokiPushConfig holds configuration for publishing assessments back to Loki.
 type LokiPushConfig struct {
-	Enabled         bool
-	BaseURL         string
-	Username        string
-	Password        string
-	TenantID        string
-	Timeout         time.Duration
+	Enabled         bool          `yaml:"enabled"`
+	BaseURL         string        `yaml:"baseURL"`
+	Username        string        `yaml:"username"`
+	Password        string        `yaml:"password"`
+	TenantID        string        `yaml:"tenantID"`
+	Timeout         time.Duration `yaml:"timeout"`
 	InsecureSkipTLS bool
 }
 
@@ -63,6 +64,7 @@ type EngineConfig struct {
 	RulesDir        string
 	PollInterval    time.Duration
 	InitialLookback time.Duration
+	IgnoreRunState  bool
 }
 
 // Load reads all configuration from environment variables, applying defaults
@@ -81,6 +83,8 @@ func Load() (*Config, error) {
 	lokiTimeout, err := envDuration("LOKI_TIMEOUT", 15*time.Second)
 	collect(err)
 
+	ignoreRunState, err := envBool("ENGINE_IGNORE_RUN_STATE", false)
+	collect(err)
 	lokiInsecure, err := envBool("LOKI_INSECURE_SKIP_TLS", false)
 	collect(err)
 
@@ -88,6 +92,9 @@ func Load() (*Config, error) {
 	collect(err)
 
 	lokiBaseURL := envOrDefault("LOKI_BASE_URL", "http://loki:3100")
+
+	lokiLookback, err := envDuration("LOKI_QUERY_LOOKBACK", 48*time.Hour)
+	collect(err)
 
 	// --- Loki push ---
 	lokiPushEnabled, err := envBool("LOKI_PUBLISH_ASSESSMENTS", false)
@@ -109,7 +116,7 @@ func Load() (*Config, error) {
 	pollInterval, err := envDuration("POLL_INTERVAL", 60*time.Second)
 	collect(err)
 
-	initialLookback, err := envDuration("INITIAL_LOOKBACK", 15*time.Minute)
+	initialLookback, err := envDuration("INITIAL_LOOKBACK", 24*time.Hour)
 	collect(err)
 
 	if len(errs) > 0 {
@@ -131,6 +138,7 @@ func Load() (*Config, error) {
 			EventsQuery:     envOrDefault("LOKI_EVENTS_QUERY", `{ingester="newsdata"}`),
 			EventsLimit:     lokiLimit,
 			QueryDirection:  envOrDefault("LOKI_QUERY_DIRECTION", "forward"),
+			Lookback:        lokiLookback,
 		},
 		LokiPush: LokiPushConfig{
 			Enabled:         lokiPushEnabled,
@@ -154,6 +162,7 @@ func Load() (*Config, error) {
 			RulesDir:        envOrDefault("RULES_DIR", "./rules"),
 			PollInterval:    pollInterval,
 			InitialLookback: initialLookback,
+			IgnoreRunState:  ignoreRunState,
 		},
 	}
 

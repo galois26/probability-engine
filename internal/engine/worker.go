@@ -18,6 +18,7 @@ type Worker struct {
 	jobName      string
 	pollInterval time.Duration
 	lookback     time.Duration
+	ignoreState  bool
 	clock        Clock
 }
 
@@ -27,6 +28,7 @@ type WorkerOptions struct {
 	JobName      string
 	PollInterval time.Duration
 	Lookback     time.Duration
+	IgnoreState  bool
 	Clock        Clock
 }
 
@@ -51,6 +53,7 @@ func NewWorker(opts WorkerOptions) *Worker {
 		jobName:      opts.JobName,
 		pollInterval: opts.PollInterval,
 		lookback:     opts.Lookback,
+		ignoreState:  opts.IgnoreState,
 		clock:        c,
 	}
 }
@@ -79,12 +82,18 @@ func (w *Worker) runOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if from.IsZero() {
+	hasState := !from.IsZero()
+	if w.ignoreState || from.IsZero() {
 		from = now.Add(-w.lookback)
 	}
-
 	log.Printf("worker: starting run from=%s to=%s", from.Format(time.RFC3339), now.Format(time.RFC3339))
-
+	log.Printf(
+		"worker: run window from=%s lookback=%s has_state=%t ignore_state=%t",
+		from.Format(time.RFC3339),
+		w.lookback,
+		hasState,
+		w.ignoreState,
+	)
 	res, err := w.engine.Run(ctx, from)
 	if err != nil {
 		return err

@@ -59,6 +59,7 @@ func Build(cfg *config.Config, logger *slog.Logger) (*engine.Worker, error) {
 		JobName:      cfg.Engine.JobName,
 		PollInterval: cfg.Engine.PollInterval,
 		Lookback:     cfg.Engine.InitialLookback,
+		IgnoreState:  cfg.Engine.IgnoreRunState,
 	})
 
 	return worker, nil
@@ -98,10 +99,11 @@ func buildEventSource(cfg config.LokiConfig, logger *slog.Logger) ports.EventSou
 		"has_tenant", cfg.TenantID != "",
 		"has_auth", cfg.Username != "" || cfg.Password != "",
 		"timeout", cfg.Timeout,
+		"lookback", cfg.Lookback,
 		"insecure_skip_tls", cfg.InsecureSkipTLS,
 	)
 
-	return lokisrc.New(client, cfg.EventsQuery, cfg.EventsLimit, cfg.QueryDirection, nil)
+	return lokisrc.New(client, cfg.EventsQuery, cfg.EventsLimit, cfg.QueryDirection, cfg.Lookback, nil)
 }
 
 // stores groups the four store interfaces together to avoid a 4-value return.

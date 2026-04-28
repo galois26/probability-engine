@@ -22,6 +22,7 @@ type QuerySpec struct {
 	To        time.Time
 	Limit     int
 	Direction string
+	Lookback  time.Duration
 }
 
 type Entry struct {
@@ -35,10 +36,11 @@ type Source struct {
 	query     string
 	limit     int
 	direction string
+	lookback  time.Duration
 	now       func() time.Time
 }
 
-func New(client Client, query string, limit int, direction string, now func() time.Time) *Source {
+func New(client Client, query string, limit int, direction string, lookback time.Duration, now func() time.Time) *Source {
 	if limit <= 0 {
 		limit = 1000
 	}
@@ -48,11 +50,15 @@ func New(client Client, query string, limit int, direction string, now func() ti
 	if now == nil {
 		now = func() time.Time { return time.Now().UTC() }
 	}
+	if lookback <= 0 {
+		lookback = 48 * time.Hour
+	}
 	return &Source{
 		client:    client,
 		query:     query,
 		limit:     limit,
 		direction: direction,
+		lookback:  lookback,
 		now:       now,
 	}
 }
@@ -64,6 +70,7 @@ func (s *Source) FetchEvents(ctx context.Context, from time.Time) ([]domain.Even
 		To:        s.now().UTC(),
 		Limit:     s.limit,
 		Direction: s.direction,
+		Lookback:  48 * time.Hour, // TODO: make this configurable if needed
 	}
 	return s.FetchEventsWithQuery(ctx, spec)
 }
