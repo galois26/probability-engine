@@ -18,6 +18,7 @@ type Worker struct {
 	jobName      string
 	pollInterval time.Duration
 	lookback     time.Duration
+	overlap      time.Duration
 	ignoreState  bool
 	clock        Clock
 }
@@ -28,6 +29,7 @@ type WorkerOptions struct {
 	JobName      string
 	PollInterval time.Duration
 	Lookback     time.Duration
+	Overlap      time.Duration
 	IgnoreState  bool
 	Clock        Clock
 }
@@ -46,6 +48,9 @@ func NewWorker(opts WorkerOptions) *Worker {
 	if opts.JobName == "" {
 		opts.JobName = "probability-engine"
 	}
+	if opts.Overlap <= 0 {
+		opts.Overlap = 1 * time.Minute
+	}
 
 	return &Worker{
 		engine:       opts.Engine,
@@ -53,6 +58,7 @@ func NewWorker(opts WorkerOptions) *Worker {
 		jobName:      opts.JobName,
 		pollInterval: opts.PollInterval,
 		lookback:     opts.Lookback,
+		overlap:      opts.Overlap,
 		ignoreState:  opts.IgnoreState,
 		clock:        c,
 	}
@@ -85,7 +91,10 @@ func (w *Worker) runOnce(ctx context.Context) error {
 	hasState := !from.IsZero()
 	if w.ignoreState || from.IsZero() {
 		from = now.Add(-w.lookback)
+	} else if w.overlap > 0 {
+		from = from.Add(-w.overlap)
 	}
+
 	log.Printf("worker: starting run from=%s to=%s", from.Format(time.RFC3339), now.Format(time.RFC3339))
 	log.Printf(
 		"worker: run window from=%s lookback=%s has_state=%t ignore_state=%t",
