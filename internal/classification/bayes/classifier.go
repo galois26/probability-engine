@@ -45,6 +45,7 @@ func (c *Classifier) Assess(ctx context.Context, ev domain.Event, rules []domain
 	_ = rules
 
 	if len(c.model.Classes) == 0 {
+		log.Printf("BAYES_DEBUG event=%s rejected reason=no_classes", ev.ID)
 		return domain.ClassifierAssessmentResult{
 			Classifier: c.Name(),
 			Features: domain.FeatureAssessment{
@@ -70,6 +71,7 @@ func (c *Classifier) Assess(ctx context.Context, ev domain.Event, rules []domain
 
 	tokens := c.extractor.Extract(ev)
 	if len(tokens) == 0 {
+		log.Printf("BAYES_DEBUG event=%s rejected reason=no_features", ev.ID)
 		return domain.ClassifierAssessmentResult{
 			Classifier: c.Name(),
 			Features: domain.FeatureAssessment{
@@ -108,7 +110,8 @@ func (c *Classifier) Assess(ctx context.Context, ev domain.Event, rules []domain
 
 	sort.Slice(scores, func(i, j int) bool { return scores[i].score > scores[j].score })
 	top := scores[0]
-
+	log.Printf("BAYES_DEBUG event=%s top_class=%s raw_score=%.4f tokens=%v labels=%v",
+		ev.ID, top.class, top.score, tokens, ev.Labels)
 	classScores := make([]domain.ClassScore, 0, len(scores))
 	topProbs := make(map[string]float64, len(scores))
 	for _, s := range scores {
@@ -123,6 +126,8 @@ func (c *Classifier) Assess(ctx context.Context, ev domain.Event, rules []domain
 
 	gatePassed := passesClassGate(top.class, tokens)
 	if !gatePassed {
+		log.Printf("BAYES_DEBUG event=%s rejected reason=gate_failed top_class=%s confidence=%.4f tokens=%v",
+			ev.ID, top.class, topProbs[top.class], tokens)
 		return domain.ClassifierAssessmentResult{
 			Classifier: c.Name(),
 			Features: domain.FeatureAssessment{
@@ -159,6 +164,8 @@ func (c *Classifier) Assess(ctx context.Context, ev domain.Event, rules []domain
 	threshold := classThreshold(top.class)
 
 	if weightedProb < threshold {
+		log.Printf("BAYES_DEBUG event=%s rejected reason=below_threshold top_class=%s confidence=%.4f threshold=%.4f source=%s labels=%v",
+			ev.ID, top.class, weightedProb, threshold, ev.Source, ev.Labels)
 		return domain.ClassifierAssessmentResult{
 			Classifier: c.Name(),
 			Features: domain.FeatureAssessment{
@@ -324,7 +331,7 @@ func sourceWeight(source string, labels map[string]string) float64 {
 	weights := map[string]float64{
 		"newsdata": 1.00,
 		"gta":      1.10,
-		"coindesk": 1.05,
+		"coindesk": 0.50,
 	}
 
 	w := weights[source]

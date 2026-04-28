@@ -67,6 +67,7 @@ func (c *HTTPClient) QueryRange(ctx context.Context, spec QuerySpec) ([]Entry, e
 	q.Set("end", strconv.FormatInt(spec.To.UTC().UnixNano(), 10))
 	q.Set("limit", strconv.Itoa(limit))
 	q.Set("direction", direction)
+	q.Set("lookback", strconv.FormatInt(int64(spec.Lookback.Seconds()), 10))
 	u.RawQuery = q.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
@@ -95,11 +96,28 @@ func (c *HTTPClient) QueryRange(ctx context.Context, spec QuerySpec) ([]Entry, e
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("loki query failed: status=%d body=%s", resp.StatusCode, string(body))
 	}
-
 	var parsed lokiQueryRangeResponse
 	if err := json.Unmarshal(body, &parsed); err != nil {
 		return nil, fmt.Errorf("unmarshal loki response: %w", err)
 	}
+
+	valueCount := 0
+	for _, stream := range parsed.Data.Result {
+		valueCount += len(stream.Values)
+	}
+
+	fmt.Printf(
+		"loki http: status=%s result_type=%s streams=%d values=%d query=%q start=%s end=%s tenant=%t auth=%t\n",
+		parsed.Status,
+		parsed.Data.ResultType,
+		len(parsed.Data.Result),
+		valueCount,
+		spec.LogQL,
+		spec.From.UTC().Format(time.RFC3339),
+		spec.To.UTC().Format(time.RFC3339),
+		c.tenantID != "",
+		c.username != "" || c.password != "",
+	)
 
 	return parsed.toEntries()
 }

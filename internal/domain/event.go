@@ -8,7 +8,7 @@ type Event struct {
 	Title     string                 `json:"title"`
 	Summary   string                 `json:"summary"`
 	URL       string                 `json:"url"`
-	Published time.Time              `json:"published"`
+	Published time.Time              `json:"published_at"`
 	Lang      string                 `json:"lang"`
 	Country   string                 `json:"country"`
 	Labels    map[string]string      `json:"labels,omitempty"`

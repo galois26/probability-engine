@@ -179,7 +179,7 @@ func TestSource_FetchEvents_DedupesAndSorts(t *testing.T) {
 		},
 	}
 
-	src := New(client, `{job="multi-ingester"}`, 100, "forward", func() time.Time { return now })
+	src := New(client, `{job="multi-ingester"}`, 100, "forward", 48, func() time.Time { return now })
 
 	got, err := src.FetchEvents(context.Background(), now.Add(-10*time.Minute))
 	if err != nil {
@@ -203,7 +203,7 @@ func TestSource_FetchEvents_DedupesAndSorts(t *testing.T) {
 }
 
 func TestSource_FetchEvents_PropagatesClientError(t *testing.T) {
-	src := New(errorClient{}, `{job="multi-ingester"}`, 100, "forward", func() time.Time {
+	src := New(errorClient{}, `{job="multi-ingester"}`, 100, "forward", 48, func() time.Time {
 		return time.Date(2026, 3, 22, 18, 0, 0, 0, time.UTC)
 	})
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strings"
 	"time"
 
 	"probability-engine/internal/domain"
@@ -21,6 +22,7 @@ type QuerySpec struct {
 	To        time.Time
 	Limit     int
 	Direction string
+	Lookback  time.Duration
 }
 
 type Entry struct {
@@ -34,10 +36,11 @@ type Source struct {
 	query     string
 	limit     int
 	direction string
+	lookback  time.Duration
 	now       func() time.Time
 }
 
-func New(client Client, query string, limit int, direction string, now func() time.Time) *Source {
+func New(client Client, query string, limit int, direction string, lookback time.Duration, now func() time.Time) *Source {
 	if limit <= 0 {
 		limit = 1000
 	}
@@ -47,11 +50,15 @@ func New(client Client, query string, limit int, direction string, now func() ti
 	if now == nil {
 		now = func() time.Time { return time.Now().UTC() }
 	}
+	if lookback <= 0 {
+		lookback = 48 * time.Hour
+	}
 	return &Source{
 		client:    client,
 		query:     query,
 		limit:     limit,
 		direction: direction,
+		lookback:  lookback,
 		now:       now,
 	}
 }
@@ -63,6 +70,7 @@ func (s *Source) FetchEvents(ctx context.Context, from time.Time) ([]domain.Even
 		To:        s.now().UTC(),
 		Limit:     s.limit,
 		Direction: s.direction,
+		Lookback:  48 * time.Hour, // TODO: make this configurable if needed
 	}
 	return s.FetchEventsWithQuery(ctx, spec)
 }
@@ -151,6 +159,9 @@ func decodeEvent(e Entry) (domain.Event, bool, error) {
 		return domain.Event{}, false, nil
 	}
 
+	labels := cloneMap(raw.Labels)
+	normalizeLabels(labels)
+
 	ev := domain.Event{
 		ID:        raw.ID,
 		Source:    raw.Source,
@@ -159,7 +170,7 @@ func decodeEvent(e Entry) (domain.Event, bool, error) {
 		URL:       raw.URL,
 		Published: raw.Published,
 		Country:   "",
-		Labels:    cloneMap(raw.Labels),
+		Labels:    labels,
 	}
 
 	if ev.Published.IsZero() {
@@ -170,6 +181,27 @@ func decodeEvent(e Entry) (domain.Event, bool, error) {
 	}
 
 	return ev, true, nil
+}
+
+func normalizeLabels(labels map[string]string) {
+	if labels == nil {
+		return
+	}
+
+	// Normalize publisher/source naming
+	if labels["source"] == "" && labels["news_source"] != "" {
+		labels["source"] = labels["news_source"]
+	}
+
+	// Map known numeric category codes into the semantic categories
+	// the Bayes model expects.
+	switch strings.TrimSpace(strings.ToLower(labels["category"])) {
+	case "121":
+		// TODO: verify this mapping against your upstream feed.
+		// Temporary placeholder so we can confirm whether label drift
+		// is the reason Bayes stopped contributing.
+		labels["category"] = "crypto"
+	}
 }
 
 func cloneMap(in map[string]string) map[string]string {
