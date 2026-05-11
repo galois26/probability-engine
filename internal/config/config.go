@@ -64,6 +64,7 @@ type EngineConfig struct {
 	RulesDir        string
 	PollInterval    time.Duration
 	InitialLookback time.Duration
+	QueryOverlap    time.Duration
 	IgnoreRunState  bool
 }
 
@@ -96,6 +97,8 @@ func Load() (*Config, error) {
 	lokiLookback, err := envDuration("LOKI_QUERY_LOOKBACK", 48*time.Hour)
 	collect(err)
 
+	queryOverlap, err := envDuration("ENGINE_QUERY_OVERLAP", 0)
+	collect(err)
 	// --- Loki push ---
 	lokiPushEnabled, err := envBool("LOKI_PUBLISH_ASSESSMENTS", false)
 	collect(err)
@@ -163,6 +166,7 @@ func Load() (*Config, error) {
 			PollInterval:    pollInterval,
 			InitialLookback: initialLookback,
 			IgnoreRunState:  ignoreRunState,
+			QueryOverlap:    queryOverlap,
 		},
 	}
 

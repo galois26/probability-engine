@@ -59,6 +59,7 @@ func Build(cfg *config.Config, logger *slog.Logger) (*engine.Worker, error) {
 		JobName:      cfg.Engine.JobName,
 		PollInterval: cfg.Engine.PollInterval,
 		Lookback:     cfg.Engine.InitialLookback,
+		Overlap:      cfg.Engine.QueryOverlap,
 		IgnoreState:  cfg.Engine.IgnoreRunState,
 	})
 
