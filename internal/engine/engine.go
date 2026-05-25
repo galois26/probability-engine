@@ -83,6 +83,12 @@ func (e *Engine) Run(ctx context.Context, from time.Time) (RunResult, error) {
 	if err != nil {
 		return result, err
 	}
+	log.Printf(
+		"probability engine: rules=%d classifiers=%d events=%d",
+		len(rules),
+		len(e.classifiers),
+		len(events),
+	)
 	for _, r := range rules {
 		log.Printf(
 			"engine: rule name=%s threshold=%.2f pos=%v neg=%v scope=%v direction=%s",
@@ -222,4 +228,47 @@ func (e *Engine) Run(ctx context.Context, from time.Time) (RunResult, error) {
 	result.Insights = len(insights)
 
 	return result, nil
+}
+func (e *Engine) AssessEvents(ctx context.Context, events []domain.Event) ([]domain.EventAssessment, error) {
+	rules, err := e.ruleLoader.LoadSignalRules(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	now := e.clock.Now()
+	assessments := make([]domain.EventAssessment, 0, len(events))
+
+	for _, ev := range events {
+		eventSignals := make([]domain.Signal, 0, len(e.classifiers))
+		classifierResults := make([]domain.ClassifierAssessmentResult, 0, len(e.classifiers))
+
+		for _, classifier := range e.classifiers {
+			if assessing, ok := classifier.(ports.AssessingSignalClassifier); ok {
+				assessmentResult, err := assessing.Assess(ctx, ev, rules)
+				if err != nil {
+					return nil, err
+				}
+
+				classifierResults = append(classifierResults, assessmentResult)
+				eventSignals = append(eventSignals, assessmentResult.Signals...)
+				continue
+			}
+
+			signals, err := classifier.Classify(ctx, ev, rules)
+			if err != nil {
+				return nil, err
+			}
+
+			classifierResults = append(
+				classifierResults,
+				fallbackClassifierAssessmentResult(classifier.Name(), signals),
+			)
+			eventSignals = append(eventSignals, signals...)
+		}
+
+		assessment := buildEventAssessment(now, ev, classifierResults, eventSignals)
+		assessments = append(assessments, assessment)
+	}
+
+	return assessments, nil
 }
