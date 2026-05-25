@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/galois/probability-engine/internal/app"
-	"github.com/galois/probability-engine/internal/config"
+	"github.com/galois26/probability-engine/internal/app"
+	"github.com/galois26/probability-engine/internal/config"
 )
 
 func main() {

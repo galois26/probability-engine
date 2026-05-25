@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/galois/probability-engine/internal/domain"
+	"github.com/galois26/probability-engine/internal/domain"
 )
 
 type EventAssessmentStore struct {

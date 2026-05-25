@@ -5,15 +5,15 @@ import (
 	"log"
 	"time"
 
-	agg "github.com/galois/probability-engine/internal/aggregation/rolling"
-	bayes "github.com/galois/probability-engine/internal/classification/bayes"
-	feat "github.com/galois/probability-engine/internal/classification/features"
-	"github.com/galois/probability-engine/internal/classification/keywordscoring"
-	rulecls "github.com/galois/probability-engine/internal/classification/rules"
-	"github.com/galois/probability-engine/internal/engine"
-	noop "github.com/galois/probability-engine/internal/enrichment/noop"
-	"github.com/galois/probability-engine/internal/ports"
-	rules "github.com/galois/probability-engine/internal/rules"
+	agg "github.com/galois26/probability-engine/internal/aggregation/rolling"
+	bayes "github.com/galois26/probability-engine/internal/classification/bayes"
+	feat "github.com/galois26/probability-engine/internal/classification/features"
+	"github.com/galois26/probability-engine/internal/classification/keywordscoring"
+	rulecls "github.com/galois26/probability-engine/internal/classification/rules"
+	"github.com/galois26/probability-engine/internal/engine"
+	noop "github.com/galois26/probability-engine/internal/enrichment/noop"
+	"github.com/galois26/probability-engine/internal/ports"
+	rules "github.com/galois26/probability-engine/internal/rules"
 )
 
 // NewDefaultEngine exposes a production-ready in-process probability engine.

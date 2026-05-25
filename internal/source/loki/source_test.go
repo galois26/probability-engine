@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/galois/probability-engine/internal/domain"
-	"github.com/galois/probability-engine/internal/testutil"
+	"github.com/galois26/probability-engine/internal/domain"
+	"github.com/galois26/probability-engine/internal/testutil"
 )
 
 func TestDecodeEvent_ValidJSON(t *testing.T) {

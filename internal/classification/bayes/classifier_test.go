@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/galois/probability-engine/internal/domain"
+	"github.com/galois26/probability-engine/internal/domain"
 )
 
 func TestCalibratedProbability_NotOne(t *testing.T) {

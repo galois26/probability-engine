@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/galois/probability-engine/internal/domain"
+	"github.com/galois26/probability-engine/internal/domain"
 )
 
 func (s *Store) SaveSignals(ctx context.Context, signals []domain.Signal) error {

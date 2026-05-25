@@ -5,7 +5,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/galois/probability-engine/internal/ports"
+	"github.com/galois26/probability-engine/internal/ports"
 )
 
 type runner interface {

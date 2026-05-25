@@ -7,8 +7,8 @@ import (
 	"log"
 	"time"
 
-	"github.com/galois/probability-engine/internal/domain"
-	"github.com/galois/probability-engine/internal/ports"
+	"github.com/galois26/probability-engine/internal/domain"
+	"github.com/galois26/probability-engine/internal/ports"
 )
 
 type EngineAdapter struct {

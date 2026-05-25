@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/galois/probability-engine/internal/domain"
-	"github.com/galois/probability-engine/internal/testutil"
+	"github.com/galois26/probability-engine/internal/domain"
+	"github.com/galois26/probability-engine/internal/testutil"
 )
 
 func TestClassifier_Classify(t *testing.T) {

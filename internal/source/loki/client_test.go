@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/galois/probability-engine/internal/testutil"
+	"github.com/galois26/probability-engine/internal/testutil"
 )
 
 func TestHTTPClient_QueryRange_ParsesResponse(t *testing.T) {

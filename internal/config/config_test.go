@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/galois/probability-engine/internal/config"
+	"github.com/galois26/probability-engine/internal/config"
 )
 
 func TestLoad_Defaults(t *testing.T) {

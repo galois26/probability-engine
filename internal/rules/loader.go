@@ -9,7 +9,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/galois/probability-engine/internal/domain"
+	"github.com/galois26/probability-engine/internal/domain"
 )
 
 type Loader struct {
