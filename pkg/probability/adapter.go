@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"probability-engine/internal/domain"
-	"probability-engine/internal/ports"
-	"probability-engine/pkg/probability"
 	"time"
+
+	"github.com/galois/probability-engine/internal/domain"
+	"github.com/galois/probability-engine/internal/ports"
 )
 
 type EngineAdapter struct {
@@ -72,7 +72,7 @@ func toDomainEvent(ev Event) domain.Event {
 	}
 }
 
-func fromDomainAssessment(a probability.EventAssessment, engineVersion, ruleVersion string) Assessment {
+func fromDomainAssessment(a domain.EventAssessment, engineVersion, ruleVersion string) Assessment {
 	return Assessment{
 		ID:         a.ID,
 		EventID:    a.Event.ID,

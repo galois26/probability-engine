@@ -2,8 +2,9 @@ package bayes
 
 import (
 	"context"
-	"probability-engine/internal/domain"
 	"testing"
+
+	"github.com/galois/probability-engine/internal/domain"
 )
 
 func TestCalibratedProbability_NotOne(t *testing.T) {

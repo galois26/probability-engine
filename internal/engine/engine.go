@@ -5,8 +5,8 @@ import (
 	"log"
 	"time"
 
-	"probability-engine/internal/domain"
-	"probability-engine/internal/ports"
+	"github.com/galois/probability-engine/internal/domain"
+	"github.com/galois/probability-engine/internal/ports"
 )
 
 type Clock interface {

@@ -3,7 +3,7 @@ package s3
 import (
 	"time"
 
-	"probability-engine/internal/domain"
+	"github.com/galois/probability-engine/internal/domain"
 )
 
 type SignalSnapshot struct {

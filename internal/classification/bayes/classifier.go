@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"probability-engine/internal/classification/features"
-	"probability-engine/internal/domain"
+	"github.com/galois/probability-engine/internal/classification/features"
+	"github.com/galois/probability-engine/internal/domain"
 )
 
 type scored struct {

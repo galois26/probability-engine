@@ -1,4 +1,4 @@
-module probability-engine
+module github.com/galois/probability-engine
 
 go 1.24
 

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"probability-engine/internal/domain"
+	"github.com/galois/probability-engine/internal/domain"
 )
 
 type Classifier struct{}

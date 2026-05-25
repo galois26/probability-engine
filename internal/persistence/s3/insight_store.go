@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log"
 
-	"probability-engine/internal/domain"
+	"github.com/galois/probability-engine/internal/domain"
 )
 
 func (s *Store) SaveInsights(ctx context.Context, insights []domain.Insight) error {

@@ -3,9 +3,10 @@ package engine
 import (
 	"crypto/sha1"
 	"encoding/hex"
-	"probability-engine/internal/domain"
 	"sort"
 	"strings"
+
+	"github.com/galois/probability-engine/internal/domain"
 )
 
 func resolveSignals(in []domain.Signal) []domain.Signal {

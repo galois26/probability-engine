@@ -3,7 +3,7 @@ package ports
 import (
 	"context"
 
-	"probability-engine/internal/domain"
+	"github.com/galois/probability-engine/internal/domain"
 )
 
 type InsightAggregator interface {

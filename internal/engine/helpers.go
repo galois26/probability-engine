@@ -3,7 +3,7 @@ package engine
 import (
 	"time"
 
-	"probability-engine/internal/domain"
+	"github.com/galois/probability-engine/internal/domain"
 )
 
 func buildEventAssessment(

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"probability-engine/internal/domain"
+	"github.com/galois/probability-engine/internal/domain"
 )
 
 func TestEventAssessmentStore_SaveEventAssessments_WritesLatestAndRunSnapshot(t *testing.T) {

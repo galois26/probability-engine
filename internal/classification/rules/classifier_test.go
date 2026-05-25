@@ -2,9 +2,10 @@ package rules
 
 import (
 	"context"
-	"probability-engine/internal/domain"
-	"probability-engine/internal/testutil"
 	"testing"
+
+	"github.com/galois/probability-engine/internal/domain"
+	"github.com/galois/probability-engine/internal/testutil"
 )
 
 func TestClassifier_Classify(t *testing.T) {

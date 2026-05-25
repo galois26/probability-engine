@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"probability-engine/internal/domain"
+	"github.com/galois/probability-engine/internal/domain"
 )
 
 type InsightStore struct {

@@ -5,16 +5,16 @@ import (
 	"testing"
 	"time"
 
-	agg "probability-engine/internal/aggregation/rolling"
-	bayes "probability-engine/internal/classification/bayes"
-	feat "probability-engine/internal/classification/features"
-	rulecls "probability-engine/internal/classification/rules"
-	"probability-engine/internal/domain"
-	noop "probability-engine/internal/enrichment/noop"
-	memstore "probability-engine/internal/persistence/memory"
-	"probability-engine/internal/ports"
-	memsrc "probability-engine/internal/source/memory"
-	"probability-engine/internal/testutil"
+	agg "github.com/galois/probability-engine/internal/aggregation/rolling"
+	bayes "github.com/galois/probability-engine/internal/classification/bayes"
+	feat "github.com/galois/probability-engine/internal/classification/features"
+	rulecls "github.com/galois/probability-engine/internal/classification/rules"
+	"github.com/galois/probability-engine/internal/domain"
+	noop "github.com/galois/probability-engine/internal/enrichment/noop"
+	memstore "github.com/galois/probability-engine/internal/persistence/memory"
+	"github.com/galois/probability-engine/internal/ports"
+	memsrc "github.com/galois/probability-engine/internal/source/memory"
+	"github.com/galois/probability-engine/internal/testutil"
 )
 
 func TestEngine_Run_EndToEnd(t *testing.T) {
