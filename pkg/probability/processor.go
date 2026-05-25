@@ -63,7 +63,7 @@ func emitAssessmentEvents(events []Event, assessments []Assessment) []Event {
 		// Find the corresponding event for this assessment
 		var event *Event
 		for _, e := range events {
-			if e.ID == assessment.EventID {
+			if e.ID == assessment.Event.ID {
 				event = &e
 				break
 			}
@@ -76,15 +76,15 @@ func emitAssessmentEvents(events []Event, assessments []Assessment) []Event {
 		// Create a new event for the assessment
 		assessmentEvent := Event{
 			ID:          assessment.ID,
-			Fingerprint: assessment.Fingerprint,
+			Fingerprint: assessment.Event.Fingerprint,
 			Source:      "probability-engine",
 			Title:       "Assessment for " + event.Title,
 			Summary:     "Assessment decision: " + assessment.Decision.State,
 			URL:         "", // Could link to a dashboard or report
 			PublishedAt: assessment.AssessedAt,
-			Lang:        event.Lang,
-			Country:     event.Country,
-			Labels:      map[string]string{"event_id": event.ID},
+			Lang:        assessment.Event.Lang,
+			Country:     assessment.Event.Country,
+			Labels:      map[string]string{"event_id": assessment.Event.ID},
 			Raw:         map[string]any{"assessment": assessment},
 		}
 
@@ -102,7 +102,7 @@ func enrichEvents(events []Event, assessments []Assessment) []Event {
 
 		// Find the corresponding assessment for this event
 		for _, assessment := range assessments {
-			if assessment.EventID == event.ID {
+			if assessment.Event.ID == event.ID {
 				// Enrich the event with assessment data
 				if enrichedEvent.Raw == nil {
 					enrichedEvent.Raw = make(map[string]any)

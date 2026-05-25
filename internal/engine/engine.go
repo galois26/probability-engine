@@ -83,6 +83,12 @@ func (e *Engine) Run(ctx context.Context, from time.Time) (RunResult, error) {
 	if err != nil {
 		return result, err
 	}
+	log.Printf(
+		"probability engine: rules=%d classifiers=%d events=%d",
+		len(rules),
+		len(e.classifiers),
+		len(events),
+	)
 	for _, r := range rules {
 		log.Printf(
 			"engine: rule name=%s threshold=%.2f pos=%v neg=%v scope=%v direction=%s",
