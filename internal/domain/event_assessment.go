@@ -14,6 +14,7 @@ const (
 type EventAssessment struct {
 	ID          string                       `json:"id"`
 	RunID       string                       `json:"runId"`
+	Fingerprint string                       `json:"fingerprint"`
 	AssessedAt  time.Time                    `json:"assessedAt"`
 	Event       EventSnapshot                `json:"event"`
 	Decision    ClassificationDecision       `json:"decision"`
@@ -31,16 +32,17 @@ type ClassifierAssessmentResult struct {
 }
 
 type EventSnapshot struct {
-	ID        string                 `json:"id"`
-	Source    string                 `json:"source"`
-	Title     string                 `json:"title"`
-	Summary   string                 `json:"summary"`
-	URL       string                 `json:"url"`
-	Published time.Time              `json:"published"`
-	Lang      string                 `json:"lang"`
-	Country   string                 `json:"country"`
-	Labels    map[string]string      `json:"labels,omitempty"`
-	Raw       map[string]interface{} `json:"raw,omitempty"`
+	ID          string                 `json:"id"`
+	Fingerprint string                 `json:"fingerprint"`
+	Source      string                 `json:"source"`
+	Title       string                 `json:"title"`
+	Summary     string                 `json:"summary"`
+	URL         string                 `json:"url"`
+	Published   time.Time              `json:"published"`
+	Lang        string                 `json:"lang"`
+	Country     string                 `json:"country"`
+	Labels      map[string]string      `json:"labels,omitempty"`
+	Raw         map[string]interface{} `json:"raw,omitempty"`
 }
 
 type FeatureAssessment struct {
@@ -105,16 +107,17 @@ type SignalSnapshot struct {
 
 func NewEventSnapshot(ev Event) EventSnapshot {
 	return EventSnapshot{
-		ID:        ev.ID,
-		Source:    ev.Source,
-		Title:     ev.Title,
-		Summary:   ev.Summary,
-		URL:       ev.URL,
-		Published: ev.Published,
-		Lang:      ev.Lang,
-		Country:   ev.Country,
-		Labels:    ev.Labels,
-		Raw:       ev.Raw,
+		ID:          ev.ID,
+		Fingerprint: ev.Fingerprint,
+		Source:      ev.Source,
+		Title:       ev.Title,
+		Summary:     ev.Summary,
+		URL:         ev.URL,
+		Published:   ev.Published,
+		Lang:        ev.Lang,
+		Country:     ev.Country,
+		Labels:      ev.Labels,
+		Raw:         ev.Raw,
 	}
 }
 
