@@ -2,10 +2,7 @@ package probability
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"log"
-	"time"
 
 	"github.com/galois26/probability-engine/internal/domain"
 	"github.com/galois26/probability-engine/internal/ports"
@@ -29,49 +26,70 @@ func NewEngineAdapter(
 	}
 }
 
+// Assess adapts public probability events into domain events, runs the internal
+// assessor, and maps domain assessments back to the public API shape.
 func (a *EngineAdapter) Assess(ctx context.Context, events []Event) ([]Assessment, error) {
 	if a.engine == nil {
 		return nil, fmt.Errorf("probability: nil internal engine")
 	}
 
-	domainEvents := make([]domain.Event, 0, len(events))
-	for _, ev := range events {
-		domainEvents = append(domainEvents, toDomainEvent(ev))
+	if len(events) == 0 {
+		return []Assessment{}, nil
 	}
 
-	assessments, err := a.engine.AssessEvents(ctx, domainEvents)
+	domainEvents := make([]domain.Event, 0, len(events))
+	for _, ev := range events {
+		domainEvents = append(domainEvents, toDomainEvent(withFingerprint(ev)))
+	}
+
+	domainAssessments, err := a.engine.AssessEvents(ctx, domainEvents)
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("probability adapter: domain_events=%d domain_assessments=%d", len(domainEvents), len(assessments))
-	out := make([]Assessment, 0, len(assessments))
-	for _, aev := range assessments {
-		out = append(out, fromDomainAssessment(aev, a.engineVersion, a.ruleVersion))
+
+	assessments := make([]Assessment, 0, len(domainAssessments))
+	for _, assessment := range domainAssessments {
+		assessments = append(assessments, fromDomainAssessment(
+			assessment,
+			a.engineVersion,
+			a.ruleVersion,
+		))
 	}
-	log.Printf("prob adapter input event id=%q title=%q", domainEvents[0].ID, domainEvents[0].Title)
-	return out, nil
+
+	return assessments, nil
 }
 
+// withFingerprint guarantees every event entering the domain layer has a stable
+// fingerprint. Caller-provided fingerprints are preserved.
+func withFingerprint(ev Event) Event {
+	if ev.Fingerprint != "" {
+		return ev
+	}
+
+	ev.Fingerprint = EventFingerprint(ev)
+	return ev
+}
+
+// toDomainEvent converts the public event type into the internal domain type.
+// It intentionally does not set default timestamps or add infrastructure data.
 func toDomainEvent(ev Event) domain.Event {
-	published := ev.PublishedAt
-	if published.IsZero() {
-		published = time.Now().UTC()
-	}
-
 	return domain.Event{
-		ID:        ev.ID,
-		Source:    ev.Source,
-		Title:     ev.Title,
-		Summary:   ev.Summary,
-		URL:       ev.URL,
-		Published: published,
-		Lang:      ev.Lang,
-		Country:   ev.Country,
-		Labels:    ev.Labels,
-		Raw:       ev.Raw,
+		ID:          ev.ID,
+		Fingerprint: ev.Fingerprint,
+		Source:      ev.Source,
+		Title:       ev.Title,
+		Summary:     ev.Summary,
+		URL:         ev.URL,
+		Published:   ev.PublishedAt,
+		Lang:        ev.Lang,
+		Country:     ev.Country,
+		Labels:      ev.Labels,
+		Raw:         ev.Raw,
 	}
 }
 
+// fromDomainAssessment converts a complete domain assessment into the public
+// assessment contract consumed by probability-engine callers such as multi-ingester.
 func fromDomainAssessment(a domain.EventAssessment, engineVersion, ruleVersion string) Assessment {
 	return Assessment{
 		ID:         a.ID,
@@ -79,18 +97,7 @@ func fromDomainAssessment(a domain.EventAssessment, engineVersion, ruleVersion s
 		RunID:      a.RunID,
 		AssessedAt: a.AssessedAt,
 
-		Event: EventSnapshot{
-			ID:        a.Event.ID,
-			Source:    a.Event.Source,
-			Title:     a.Event.Title,
-			Summary:   a.Event.Summary,
-			URL:       a.Event.URL,
-			Published: a.Event.Published,
-			Lang:      a.Event.Lang,
-			Country:   a.Event.Country,
-			Labels:    a.Event.Labels,
-			Raw:       a.Event.Raw,
-		},
+		Event: fromDomainEventSnapshot(a.Event),
 
 		Decision: ClassificationDecision{
 			State:        string(a.Decision.State),
@@ -101,19 +108,28 @@ func fromDomainAssessment(a domain.EventAssessment, engineVersion, ruleVersion s
 			Reasons:      a.Decision.Reasons,
 		},
 		Signals:       mapSignalSnapshots(a.Signals),
-		Classifiers:   mapClassifiers(a.Classifiers),
+		Classifiers:   mapClassifierResults(a.Classifiers),
 		EngineVersion: engineVersion,
 		RuleVersion:   ruleVersion,
 	}
 }
 
-func rawMapFromJSON(b []byte) map[string]any {
-	if len(b) == 0 {
-		return nil
+// fromDomainEventSnapshot maps the domain event snapshot directly to the public
+// event snapshot. Fingerprint is copied from the domain snapshot without recomputing.
+func fromDomainEventSnapshot(ev domain.EventSnapshot) EventSnapshot {
+	return EventSnapshot{
+		ID:          ev.ID,
+		Fingerprint: ev.Fingerprint,
+		Source:      ev.Source,
+		Title:       ev.Title,
+		Summary:     ev.Summary,
+		URL:         ev.URL,
+		Published:   ev.Published,
+		Lang:        ev.Lang,
+		Country:     ev.Country,
+		Labels:      ev.Labels,
+		Raw:         ev.Raw,
 	}
-	var out map[string]any
-	_ = json.Unmarshal(b, &out)
-	return out
 }
 
 func mapSignalSnapshots(signals []domain.SignalSnapshot) []SignalSnapshot {
@@ -137,7 +153,7 @@ func mapSignalSnapshots(signals []domain.SignalSnapshot) []SignalSnapshot {
 	return out
 }
 
-func mapClassifiers(classifiers []domain.ClassifierAssessmentResult) []ClassifierAssessmentResult {
+func mapClassifierResults(classifiers []domain.ClassifierAssessmentResult) []ClassifierAssessmentResult {
 	out := make([]ClassifierAssessmentResult, 0, len(classifiers))
 	for _, c := range classifiers {
 		out = append(out, ClassifierAssessmentResult{
